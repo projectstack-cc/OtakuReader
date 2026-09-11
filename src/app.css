@@ -1,0 +1,243 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg-primary: #0f0f1a;
+  --color-bg-secondary: #1a1a2e;
+  --color-bg-tertiary: #252542;
+  --color-bg-elevated: #2d2d4a;
+  --color-text-primary: #e8e8f0;
+  --color-text-secondary: #a0a0b8;
+  --color-text-muted: #6b6b80;
+  --color-accent: #7c3aed;
+  --color-accent-light: #a78bfa;
+  --color-accent-dark: #5b21b6;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-border-hover: rgba(255, 255, 255, 0.15);
+  --shadow-neumorph-light: rgba(46, 46, 72, 0.5);
+  --shadow-neumorph-dark: rgba(10, 10, 22, 0.7);
+  --shadow-neumorph-light-inset: rgba(46, 46, 72, 0.4);
+  --shadow-neumorph-dark-inset: rgba(10, 10, 22, 0.9);
+  --radius-neumorph: 16px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+}
+
+:root {
+  --bg-primary: #0f0f1a;
+  --bg-secondary: #1a1a2e;
+  --bg-tertiary: #252542;
+  --bg-elevated: #2d2d4a;
+  --text-primary: #e8e8f0;
+  --text-secondary: #a0a0b8;
+  --text-muted: #6b6b80;
+  --accent: #7c3aed;
+  --accent-light: #a78bfa;
+  --accent-dark: #5b21b6;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.15);
+  --shadow-neumorph-light: rgba(46, 46, 72, 0.5);
+  --shadow-neumorph-dark: rgba(10, 10, 22, 0.7);
+  --shadow-neumorph-light-inset: rgba(46, 46, 72, 0.4);
+  --shadow-neumorph-dark-inset: rgba(10, 10, 22, 0.9);
+  --radius-neumorph: 16px;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  button {
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: inherit;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}
+
+@layer components {
+  .neumorphic-card {
+    background: var(--bg-secondary);
+    border-radius: var(--radius-neumorph);
+    box-shadow: 6px 6px 12px var(--shadow-neumorph-dark), -6px -6px 12px var(--shadow-neumorph-light);
+    border: 1px solid var(--border);
+  }
+
+  .neumorphic-card-inset {
+    background: var(--bg-secondary);
+    border-radius: var(--radius-neumorph);
+    box-shadow: inset 4px 4px 8px var(--shadow-neumorph-dark-inset), inset -4px -4px 8px var(--shadow-neumorph-light-inset);
+    border: 1px solid var(--border);
+  }
+
+  .neumorphic-button {
+    background: var(--bg-secondary);
+    border-radius: var(--radius-sm);
+    box-shadow: 4px 4px 8px var(--shadow-neumorph-dark), -4px -4px 8px var(--shadow-neumorph-light);
+    transition: all 0.15s ease;
+  }
+
+  .neumorphic-button:hover {
+    box-shadow: 2px 2px 4px var(--shadow-neumorph-dark), -2px -2px 4px var(--shadow-neumorph-light);
+  }
+
+  .neumorphic-button:active {
+    box-shadow: inset 2px 2px 4px var(--shadow-neumorph-dark-inset), inset -2px -2px 4px var(--shadow-neumorph-light-inset);
+  }
+
+  .neumorphic-input {
+    background: var(--bg-secondary);
+    border-radius: var(--radius-sm);
+    box-shadow: inset 2px 2px 4px var(--shadow-neumorph-dark-inset), inset -2px -2px 4px var(--shadow-neumorph-light-inset);
+    border: 1px solid var(--border);
+  }
+
+  .reader-container {
+    background: #000;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scroll-behavior: smooth;
+  }
+
+  .reader-image {
+    width: 100%;
+    height: auto;
+    display: block;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+
+  .horizontal-reader {
+    display: flex;
+    flex-direction: row-reverse;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    scroll-behavior: smooth;
+    gap: 0;
+  }
+
+  .horizontal-reader img {
+    scroll-snap-align: start;
+    flex-shrink: 0;
+    height: 100vh;
+    width: auto;
+    object-fit: contain;
+  }
+
+  .manga-card {
+    background: var(--bg-secondary);
+    border-radius: var(--radius-neumorph);
+    box-shadow: 4px 4px 8px var(--shadow-neumorph-dark), -4px -4px 8px var(--shadow-neumorph-light);
+    overflow: hidden;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .manga-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 8px 8px 16px var(--shadow-neumorph-dark), -8px -8px 16px var(--shadow-neumorph-light);
+  }
+
+  .tab-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 64px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    z-index: 50;
+    backdrop-filter: blur(12px);
+    background-color: rgba(26, 26, 46, 0.9);
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 256px;
+    height: 100vh;
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border);
+    z-index: 40;
+    display: none;
+  }
+
+  @media (min-width: 768px) {
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+    }
+    .tab-bar {
+      display: none;
+    }
+  }
+
+  .skeleton {
+    background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-tertiary) 50%, var(--bg-secondary) 75%);
+    background-size: 200% 100%;
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes skeleton-pulse {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .reader-zoom-wrapper {
+    transform-origin: var(--zoom-origin-x, center) var(--zoom-origin-y, center);
+    transition: transform 0.2s ease-out;
+  }
+
+  .reader-zoom-wrapper.pinching {
+    transition: none;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
