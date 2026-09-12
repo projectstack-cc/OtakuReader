@@ -317,7 +317,7 @@ export async function GET(event: APIEvent): Promise<Response> {
 
     try {
       const cachedEntry = await cacheGet<unknown>(cacheKey);
-      if (cachedEntry) {
+      if (cachedEntry && cachedEntry.value !== null) {
         return new Response(JSON.stringify({ ...(cachedEntry.value as Record<string, unknown>), _cache: { cached: true, ttl: cacheTTL, key: cacheKey } }), {
           status: 200,
           headers: {

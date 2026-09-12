@@ -201,6 +201,7 @@ export async function searchManga(params: {
   if (params.contentRating) params.contentRating.forEach((r) => searchParams.append("contentRating[]", r));
   if (params.limit) searchParams.set("limit", String(params.limit));
   if (params.offset) searchParams.set("offset", String(params.offset));
+  searchParams.append("includes[]", "cover_art");
 
   const res = await fetch(`${API_BASE}/manga/manga?${searchParams.toString()}`);
   if (!res.ok) throw new Error("Failed to search manga");
@@ -223,7 +224,7 @@ export async function searchManga(params: {
 }
 
 export async function getMangaDetail(id: string): Promise<NormalizedManga> {
-  const res = await fetch(`${API_BASE}/manga/${id}?includes[]=cover_art`);
+  const res = await fetch(`${API_BASE}/manga/manga/${id}?includes[]=cover_art`);
   if (!res.ok) throw new Error("Failed to fetch manga detail");
   const data = await res.json();
   const manga = (data as any).data || data;
@@ -245,7 +246,7 @@ export async function getMangaDetail(id: string): Promise<NormalizedManga> {
 }
 
 export async function getMangaFeed(id: string): Promise<NormalizedChapter[]> {
-  const res = await fetch(`${API_BASE}/manga/${id}/feed?contentRating[]=safe&contentRating[]=suggestive&limit=500`);
+  const res = await fetch(`${API_BASE}/manga/manga/${id}/feed?contentRating[]=safe&contentRating[]=suggestive&limit=500`);
   if (!res.ok) throw new Error("Failed to fetch manga feed");
   const data = await res.json();
   const chapters = (data as any).data || [];
@@ -263,19 +264,17 @@ export async function getMangaFeed(id: string): Promise<NormalizedChapter[]> {
 }
 
 export async function getChapterPages(mangaId: string, chapterId: string): Promise<string[]> {
-  const res = await fetch(`${API_BASE}/manga/${mangaId}/chapter/${chapterId}/pages`);
+  // MangaDex serves chapter images via the at-home/server flow, not a
+  // manga/chapter/pages endpoint (that path doesn't exist upstream):
+  // fetch a baseUrl + hash + filename list, then build image URLs from them.
+  const res = await fetch(`${API_BASE}/manga/at-home/${chapterId}`);
   if (!res.ok) throw new Error("Failed to fetch chapter pages");
   const data = await res.json();
-  if (data?.chapters && typeof data.chapters === 'object') {
-    const hashes = Object.keys(data.chapters);
-    if (hashes.length > 0) {
-      return data.chapters[hashes[0]] || [];
-    }
-  }
-  if (Array.isArray(data?.data)) return data.data;
-  if (Array.isArray(data?.pages)) return data.pages;
-  if (data?.chapter?.data) return data.chapter.data;
-  return [];
+  const baseUrl = data?.baseUrl;
+  const hash = data?.chapter?.hash;
+  const filenames: string[] = Array.isArray(data?.chapter?.data) ? data.chapter.data : [];
+  if (!baseUrl || !hash || filenames.length === 0) return [];
+  return filenames.map((f) => `${baseUrl}/data/${hash}/${f}`);
 }
 
 export async function getCoverUrl(coverId: string, fileName: string, size: "256" | "512" = "512"): Promise<string> {
@@ -284,8 +283,8 @@ export async function getCoverUrl(coverId: string, fileName: string, size: "256"
 
 export async function fetchBrowseManga(params: FilterParams): Promise<BrowseResult> {
   const searchParams = new URLSearchParams();
-  searchParams.set("contentRating[]", "safe");
-  searchParams.set("contentRating[]", "suggestive");
+  searchParams.append("contentRating[]", "safe");
+  searchParams.append("contentRating[]", "suggestive");
   searchParams.set("limit", String(params.limit ?? 24));
   if (params.offset) searchParams.set("offset", String(params.offset));
   if (params.query) searchParams.set("title", params.query);
@@ -293,6 +292,7 @@ export async function fetchBrowseManga(params: FilterParams): Promise<BrowseResu
   if (params.status?.length) params.status.forEach((s) => searchParams.append("status[]", s));
   if (params.demographic) searchParams.set("publicationDemographic[]", params.demographic);
   if (params.sort) searchParams.set(`order[${params.sort}]`, "desc");
+  searchParams.append("includes[]", "cover_art");
 
   const res = await fetch(`${API_BASE}/manga/manga?${searchParams.toString()}`);
   if (!res.ok) throw new Error("Failed to browse manga");

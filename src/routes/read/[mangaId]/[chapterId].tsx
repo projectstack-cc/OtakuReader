@@ -49,7 +49,7 @@ const ReadPage: Component = () => {
       setLoading(true);
       const [fetchedPages, mangaDetail] = await Promise.allSettled([
         getChapterPages(params.mangaId, params.chapterId),
-        fetch(`/api/manga/${params.mangaId}?includes[]=cover_art`).then((r) => {
+        fetch(`/api/manga/manga/${params.mangaId}?includes[]=cover_art`).then((r) => {
           if (!r.ok) throw new Error("Failed to fetch manga detail");
           return r.json();
         }),
