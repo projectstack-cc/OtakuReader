@@ -48,6 +48,19 @@ const MangaDetailPage: Component = () => {
     navigate(`/read/${params.id}/${chapterId}`);
   };
 
+  const firstChapter = () => {
+    const all = chapters();
+    if (all.length === 0) return null;
+    const preferred = all.some((c) => c.language === "en")
+      ? all.filter((c) => c.language === "en")
+      : all;
+    return [...preferred].sort((a, b) => {
+      const na = parseFloat(a.chapter);
+      const nb = parseFloat(b.chapter);
+      return !isNaN(na) && !isNaN(nb) ? na - nb : String(a.chapter).localeCompare(String(b.chapter));
+    })[0];
+  };
+
   const toggleFavorite = () => {
     if (!manga()) return;
     favoritesActions.toggle({
@@ -153,7 +166,7 @@ const MangaDetailPage: Component = () => {
 
             <div class="flex flex-wrap gap-3 mt-6">
               <button
-                onClick={() => chapters().length > 0 && handleReadChapter(chapters()[0].id)}
+                onClick={() => firstChapter() && handleReadChapter(firstChapter()!.id)}
                 disabled={chapters().length === 0}
                 class="inline-flex items-center gap-2 px-6 py-3 bg-[var(--accent)] hover:bg-[var(--accent-dark)] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-medium transition-colors"
               >

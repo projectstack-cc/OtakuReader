@@ -57,13 +57,15 @@ const ReadPage: Component = () => {
 
       if (fetchedPages.status === "fulfilled") {
         setPages(fetchedPages.value);
-        const data = fetchedPages.value as any;
-        const chapterData = data?.chapters
-          ? Object.values(data.chapters)[0]
-          : data?.chapter?.data;
-        if (Array.isArray(chapterData)) {
-          setChapterInfo({ id: params.chapterId, chapter: params.chapterId, pages: chapterData.length });
+        if (fetchedPages.value.length === 0) {
+          setError("This chapter has no readable pages (it may be an external/licensed release not hosted on MangaDex).");
         }
+      } else {
+        setError(
+          fetchedPages.reason instanceof Error
+            ? fetchedPages.reason.message
+            : "Failed to load chapter pages",
+        );
       }
 
       if (mangaDetail.status === "fulfilled") {
@@ -93,6 +95,17 @@ const ReadPage: Component = () => {
     try {
       const feed = await getMangaFeed(params.mangaId);
       const lang = userLanguage();
+
+      const currentChapterRaw = feed.find((ch: any) => ch.id === params.chapterId);
+      if (currentChapterRaw) {
+        setChapterInfo({
+          id: currentChapterRaw.id,
+          chapter: currentChapterRaw.chapter,
+          title: currentChapterRaw.title,
+          pages: currentChapterRaw.pages,
+        });
+      }
+
       let chapters: FeedChapter[] = feed
         .filter((ch: any) => !lang || ch.language === lang)
         .sort((a: any, b: any) => {

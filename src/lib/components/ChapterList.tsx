@@ -1,4 +1,4 @@
-import { Component, Show, For, createSignal } from "solid-js";
+import { Component, Show, For, createSignal, createEffect } from "solid-js";
 import { classNames, formatRelativeTime, truncateText } from "~/lib/utils/helpers";
 
 interface Chapter {
@@ -19,18 +19,39 @@ interface ChapterListProps {
 const ChapterList: Component<ChapterListProps> = (props) => {
   const [filterLang, setFilterLang] = createSignal<string>("all");
   const [showAll, setShowAll] = createSignal(false);
+  const [sortOrder, setSortOrder] = createSignal<"asc" | "desc">("asc");
+  const [hasDefaultedLang, setHasDefaultedLang] = createSignal(false);
+
+  createEffect(() => {
+    if (hasDefaultedLang() || props.chapters.length === 0) return;
+    setHasDefaultedLang(true);
+    if (props.chapters.some((c) => c.language === "en")) {
+      setFilterLang("en");
+    }
+  });
+
+  const uniqueLanguages = () => {
+    const langs = new Set(props.chapters.map((c) => c.language).filter(Boolean));
+    return Array.from(langs);
+  };
+
+  const sortedChapters = (chapters: Chapter[]) => {
+    const sorted = [...chapters].sort((a, b) => {
+      const na = parseFloat(a.chapter);
+      const nb = parseFloat(b.chapter);
+      const cmp = !isNaN(na) && !isNaN(nb) ? na - nb : a.chapter.localeCompare(b.chapter);
+      return sortOrder() === "asc" ? cmp : -cmp;
+    });
+    return sorted;
+  };
 
   const filteredChapters = () => {
     let chapters = props.chapters;
     if (filterLang() !== "all") {
       chapters = chapters.filter((c) => c.language === filterLang());
     }
+    chapters = sortedChapters(chapters);
     return showAll() ? chapters : chapters.slice(0, 50);
-  };
-
-  const uniqueLanguages = () => {
-    const langs = new Set(props.chapters.map((c) => c.language).filter(Boolean));
-    return Array.from(langs);
   };
 
   return (
@@ -65,6 +86,27 @@ const ChapterList: Component<ChapterListProps> = (props) => {
           </For>
         </div>
       </Show>
+
+      <div class="flex items-center justify-between">
+        <span class="text-sm text-[var(--text-muted)]">
+          {filteredChapters().length} chapter{filteredChapters().length === 1 ? "" : "s"}
+        </span>
+        <button
+          onClick={() => setSortOrder(sortOrder() === "asc" ? "desc" : "asc")}
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+        >
+          <svg
+            class={classNames("w-4 h-4 transition-transform", sortOrder() === "desc" && "rotate-180")}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M12 5v14M5 12l7 7 7-7" />
+          </svg>
+          {sortOrder() === "asc" ? "Oldest first" : "Newest first"}
+        </button>
+      </div>
 
       <div class="space-y-2">
         <For each={filteredChapters()}>
