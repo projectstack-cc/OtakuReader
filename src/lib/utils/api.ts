@@ -246,7 +246,7 @@ export async function getMangaDetail(id: string): Promise<NormalizedManga> {
 }
 
 export async function getMangaFeed(id: string): Promise<NormalizedChapter[]> {
-  const res = await fetch(`${API_BASE}/manga/manga/${id}/feed?contentRating[]=safe&contentRating[]=suggestive&limit=500`);
+  const res = await fetch(`${API_BASE}/manga/manga/${id}/feed?contentRating[]=safe&contentRating[]=suggestive&limit=500&includes[]=scanlation_group`);
   if (!res.ok) throw new Error("Failed to fetch manga feed");
   const data = await res.json();
   const chapters = (data as any).data || [];
