@@ -1,8 +1,9 @@
-import { JIKAN_BASE_URL, DEFAULT_USER_AGENT, MAX_RETRIES, RETRY_BACKOFF_BASE_MS, JIKAN_PAGE_SIZE } from '$lib/api/constants';
-import { createRateLimiterFromEnv, RateLimiter } from '$lib/api/rate-limit';
-import { cachedFetch } from '$lib/api/cache';
-import { ProxyError, proxyErrorResponse, fallbackResponse } from '$lib/api/errors';
-import type { JikanResponse, JikanManga, JikanAnime, JikanPagination } from '$lib/api/types';
+import type { APIEvent } from '@solidjs/start/server';
+import { JIKAN_BASE_URL, DEFAULT_USER_AGENT, MAX_RETRIES, RETRY_BACKOFF_BASE_MS, JIKAN_PAGE_SIZE } from '~/lib/api/constants';
+import { createRateLimiterFromEnv, RateLimiter } from '~/lib/api/rate-limit';
+import { cachedFetch } from '~/lib/api/cache';
+import { ProxyError, proxyErrorResponse, fallbackResponse } from '~/lib/api/errors';
+import type { JikanResponse, JikanManga, JikanAnime, JikanPagination } from '~/lib/api/types';
 
 let jikanRateLimiterInstance: RateLimiter | null = null;
 let jikanRateLimiterInit: Promise<RateLimiter> | null = null;
@@ -125,12 +126,9 @@ function isJikanSuccessResponse(status: number): boolean {
   return status >= 200 && status < 300;
 }
 
-export async function GET(
-  { params }: { params: { path: string[] } },
-  request: Request,
-): Promise<Response> {
-  const pathSegments = params.path ?? [];
-  const url = new URL(request.url);
+export async function GET(event: APIEvent): Promise<Response> {
+  const pathSegments = (event.params.path ?? '').split('/').filter(Boolean);
+  const url = new URL(event.request.url);
   const queryParams = url.searchParams;
 
   if (pathSegments.length === 0) {
@@ -285,14 +283,14 @@ export async function GET(
   }
 }
 
-export async function POST({ params, request }: { params: { path: string[] }; request: Request }): Promise<Response> {
-  return GET({ params }, request);
+export async function POST(event: APIEvent): Promise<Response> {
+  return GET(event);
 }
 
-export async function PUT({ params, request }: { params: { path: string[] }; request: Request }): Promise<Response> {
-  return GET({ params }, request);
+export async function PUT(event: APIEvent): Promise<Response> {
+  return GET(event);
 }
 
-export async function DELETE({ params, request }: { params: { path: string[] }; request: Request }): Promise<Response> {
-  return GET({ params }, request);
+export async function DELETE(event: APIEvent): Promise<Response> {
+  return GET(event);
 }

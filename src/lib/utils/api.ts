@@ -202,7 +202,7 @@ export async function searchManga(params: {
   if (params.limit) searchParams.set("limit", String(params.limit));
   if (params.offset) searchParams.set("offset", String(params.offset));
 
-  const res = await fetch(`${API_BASE}/manga/search?${searchParams.toString()}`);
+  const res = await fetch(`${API_BASE}/manga/manga?${searchParams.toString()}`);
   if (!res.ok) throw new Error("Failed to search manga");
   const data = await res.json();
   const mangas = (data as any).data || (data as any).results || [];

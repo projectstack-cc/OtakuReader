@@ -1,8 +1,9 @@
-import { ANILIST_BASE_URL, DEFAULT_USER_AGENT, MAX_RETRIES, RETRY_BACKOFF_BASE_MS, RETRY_HEADER } from '$lib/api/constants';
-import { createRateLimiterFromEnv, RateLimiter } from '$lib/api/rate-limit';
-import { cachedFetch } from '$lib/api/cache';
-import { ProxyError, proxyErrorResponse } from '$lib/api/errors';
-import type { AnilistMedia, AnilistUser } from '$lib/api/types';
+import type { APIEvent } from '@solidjs/start/server';
+import { ANILIST_BASE_URL, DEFAULT_USER_AGENT, MAX_RETRIES, RETRY_BACKOFF_BASE_MS, RETRY_HEADER } from '~/lib/api/constants';
+import { createRateLimiterFromEnv, RateLimiter } from '~/lib/api/rate-limit';
+import { cachedFetch } from '~/lib/api/cache';
+import { ProxyError, proxyErrorResponse } from '~/lib/api/errors';
+import type { AnilistMedia, AnilistUser } from '~/lib/api/types';
 
 let anilistRateLimiterInstance: RateLimiter | null = null;
 let anilistRateLimiterInit: Promise<RateLimiter> | null = null;
@@ -198,9 +199,9 @@ function filterAdultMedia(data: Record<string, unknown>): Record<string, unknown
   return data;
 }
 
-export async function GET({ request }: { params: Record<string, string>; request: Request }): Promise<Response> {
+export async function GET(event: APIEvent): Promise<Response> {
   try {
-    const url = new URL(request.url);
+    const url = new URL(event.request.url);
     const query = url.searchParams.get('query')?.trim();
     const variablesParam = url.searchParams.get('variables');
 
@@ -259,9 +260,9 @@ export async function GET({ request }: { params: Record<string, string>; request
   }
 }
 
-export async function POST({ request }: { params: Record<string, string>; request: Request }): Promise<Response> {
+export async function POST(event: APIEvent): Promise<Response> {
   try {
-    const body = await request.json();
+    const body = await event.request.json();
     const query = typeof body.query === 'string' ? body.query.trim() : '';
     const variables = typeof body.variables === 'object' && body.variables !== null ? body.variables : {};
 

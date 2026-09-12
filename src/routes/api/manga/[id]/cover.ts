@@ -1,5 +1,6 @@
-import { DEFAULT_USER_AGENT, CACHE_TTL } from '$lib/api/constants';
-import { cachedFetch, cacheGet, cacheSet } from '$lib/api/cache';
+import type { APIEvent } from '@solidjs/start/server';
+import { DEFAULT_USER_AGENT, CACHE_TTL } from '~/lib/api/constants';
+import { cachedFetch, cacheGet, cacheSet } from '~/lib/api/cache';
 
 const MANGA_DEX_CDN_BASE = 'https://uploads.mangadex.org/covers';
 const COVER_CACHE_TTL = CACHE_TTL.MANGA_DEX_COVER;
@@ -8,8 +9,9 @@ function buildCoverCacheKey(mangaId: string, fileName: string, size: string): st
   return `md:cover:${mangaId}:${fileName}:${size}`;
 }
 
-export async function GET({ params, url }: { params: { id: string }; url: URL }): Promise<Response> {
-  const mangaId = params.id;
+export async function GET(event: APIEvent): Promise<Response> {
+  const mangaId = event.params.id;
+  const url = new URL(event.request.url);
   const fileName = url.searchParams.get('file');
   const size = url.searchParams.get('size') || '512';
 
@@ -107,6 +109,6 @@ export async function GET({ params, url }: { params: { id: string }; url: URL })
   }
 }
 
-export async function POST({ params, url }: { params: { id: string }; url: URL }): Promise<Response> {
-  return GET({ params, url });
+export async function POST(event: APIEvent): Promise<Response> {
+  return GET(event);
 }

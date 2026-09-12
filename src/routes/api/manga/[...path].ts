@@ -1,8 +1,9 @@
-import { MANGA_DEX_BASE_URL, MANGA_DEX_PAGE_SIZE, MANGA_DEX_AT_HOME_BASE_URL, ALLOWED_CONTENT_RATINGS, CONTENT_RATING_PARAM, DEFAULT_USER_AGENT, MAX_RETRIES, RETRY_BACKOFF_BASE_MS, RETRY_HEADER } from '$lib/api/constants';
-import { createRateLimiterFromEnv, RateLimiter } from '$lib/api/rate-limit';
-import { cachedFetch, cacheGet, cacheSet } from '$lib/api/cache';
-import { ProxyError, proxyErrorResponse, fallbackResponse } from '$lib/api/errors';
-import type { MangaDexSearchResponse, MangaDexFeedResponse, MangaDexAtHomeResponse, MangaDexListResponse, MangaDexManga, MangaDexChapter, MangaDexCoverArt, MangaDexAuthor, MangaDexScanlationGroup, MangaDexAggregateResponse, MangaDexRateLimitHeaders, MangaDexErrorResponse, MangaDexRelationResponse, MangaDexReportReasonListResponse, MangaDexLegacyMappingResponse, MangaDexMangaRatingResponse, MangaDexFollowedMangaResponse, MangaDexReadMarkersResponse, MangaDexReadingStatusResponse, MangaDexAccountCapabilitiesResponse, MangaDexUser, MangaDexCustomList, MangaDexProxyCacheInfo, ContentRatingFilter } from '$lib/api/types';
+import type { APIEvent } from '@solidjs/start/server';
+import { MANGA_DEX_BASE_URL, MANGA_DEX_PAGE_SIZE, MANGA_DEX_AT_HOME_BASE_URL, ALLOWED_CONTENT_RATINGS, CONTENT_RATING_PARAM, DEFAULT_USER_AGENT, MAX_RETRIES, RETRY_BACKOFF_BASE_MS, RETRY_HEADER } from '~/lib/api/constants';
+import { createRateLimiterFromEnv, RateLimiter } from '~/lib/api/rate-limit';
+import { cachedFetch, cacheGet, cacheSet } from '~/lib/api/cache';
+import { ProxyError, proxyErrorResponse, fallbackResponse } from '~/lib/api/errors';
+import type { MangaDexSearchResponse, MangaDexFeedResponse, MangaDexAtHomeResponse, MangaDexListResponse, MangaDexManga, MangaDexChapter, MangaDexCoverArt, MangaDexAuthor, MangaDexScanlationGroup, MangaDexAggregateResponse, MangaDexRateLimitHeaders, MangaDexErrorResponse, MangaDexRelationResponse, MangaDexReportReasonListResponse, MangaDexLegacyMappingResponse, MangaDexMangaRatingResponse, MangaDexFollowedMangaResponse, MangaDexReadMarkersResponse, MangaDexReadingStatusResponse, MangaDexAccountCapabilitiesResponse, MangaDexUser, MangaDexCustomList, MangaDexProxyCacheInfo, ContentRatingFilter } from '~/lib/api/types';
 
 let mdRateLimiter: RateLimiter | null = null;
 let mdRateLimiterInit: Promise<RateLimiter> | null = null;
@@ -141,12 +142,9 @@ async function fetchWithRateLimitAndRetry(
   }, maxRetries);
 }
 
-export async function GET(
-  { params }: { params: { path: string[] } },
-  request: Request,
-): Promise<Response> {
-  const pathSegments = params.path ?? [];
-  const url = new URL(request.url);
+export async function GET(event: APIEvent): Promise<Response> {
+  const pathSegments = (event.params.path ?? '').split('/').filter(Boolean);
+  const url = new URL(event.request.url);
   const queryParams = url.searchParams;
 
   if (pathSegments.length === 0) {
@@ -342,14 +340,14 @@ export async function GET(
   }
 }
 
-export async function POST({ params, request }: { params: { path: string[] }; request: Request }): Promise<Response> {
-  return GET({ params }, request);
+export async function POST(event: APIEvent): Promise<Response> {
+  return GET(event);
 }
 
-export async function PUT({ params, request }: { params: { path: string[] }; request: Request }): Promise<Response> {
-  return GET({ params }, request);
+export async function PUT(event: APIEvent): Promise<Response> {
+  return GET(event);
 }
 
-export async function DELETE({ params, request }: { params: { path: string[] }; request: Request }): Promise<Response> {
-  return GET({ params }, request);
+export async function DELETE(event: APIEvent): Promise<Response> {
+  return GET(event);
 }
