@@ -297,7 +297,7 @@ const Reader: Component<ReaderProps> = (props) => {
       },
       {
         root: containerRef,
-        rootMargin: "100vh 0px",
+        rootMargin: "100% 0px",
       }
     );
 
