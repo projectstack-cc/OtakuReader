@@ -8,6 +8,12 @@ interface Chapter {
   pages: number;
   publishedAt: string;
   language?: string;
+  scanlationGroup?: string[];
+}
+
+interface ChapterGroup {
+  chapterNumber: string;
+  releases: Chapter[];
 }
 
 interface ChapterListProps {
@@ -50,9 +56,42 @@ const ChapterList: Component<ChapterListProps> = (props) => {
     if (filterLang() !== "all") {
       chapters = chapters.filter((c) => c.language === filterLang());
     }
-    chapters = sortedChapters(chapters);
-    return showAll() ? chapters : chapters.slice(0, 50);
+    return sortedChapters(chapters);
   };
+
+  // MangaDex often has multiple scanlation groups release the same chapter
+  // number - group by chapter number so each one shows as a single row with
+  // a source selector, instead of a separate duplicate row per release.
+  const allGroups = (): ChapterGroup[] => {
+    const chapters = filteredChapters();
+    const groups = new Map<string, Chapter[]>();
+    const order: string[] = [];
+    for (const c of chapters) {
+      if (!groups.has(c.chapter)) {
+        groups.set(c.chapter, []);
+        order.push(c.chapter);
+      }
+      groups.get(c.chapter)!.push(c);
+    }
+    return order.map((chapterNumber) => ({ chapterNumber, releases: groups.get(chapterNumber)! }));
+  };
+
+  const visibleGroups = () => {
+    const groups = allGroups();
+    return showAll() ? groups : groups.slice(0, 50);
+  };
+
+  const [selectedRelease, setSelectedRelease] = createSignal<Record<string, number>>({});
+
+  const selectedIndex = (group: ChapterGroup) => {
+    const idx = selectedRelease()[group.chapterNumber] ?? 0;
+    return idx < group.releases.length ? idx : 0;
+  };
+
+  const selectedChapter = (group: ChapterGroup) => group.releases[selectedIndex(group)];
+
+  const releaseLabel = (chapter: Chapter, index: number) =>
+    chapter.scanlationGroup?.[0] || `Release ${index + 1}`;
 
   return (
     <div class="space-y-4">
@@ -89,7 +128,10 @@ const ChapterList: Component<ChapterListProps> = (props) => {
 
       <div class="flex items-center justify-between">
         <span class="text-sm text-[var(--text-muted)]">
-          {filteredChapters().length} chapter{filteredChapters().length === 1 ? "" : "s"}
+          {allGroups().length} chapter{allGroups().length === 1 ? "" : "s"}
+          <Show when={filteredChapters().length > allGroups().length}>
+            {" "}({filteredChapters().length} releases)
+          </Show>
         </span>
         <button
           onClick={() => setSortOrder(sortOrder() === "asc" ? "desc" : "asc")}
@@ -109,54 +151,82 @@ const ChapterList: Component<ChapterListProps> = (props) => {
       </div>
 
       <div class="space-y-2">
-        <For each={filteredChapters()}>
-          {(chapter) => (
-            <button
-              onClick={() => props.onReadChapter?.(chapter.id)}
-              class="w-full text-left p-4 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] hover:border-[var(--accent)] hover:bg-[var(--bg-tertiary)] transition-all duration-200 group"
-            >
-              <div class="flex items-center justify-between">
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-2">
-                    <span class="text-sm font-semibold text-[var(--accent-light)]">
-                      Ch. {chapter.chapter}
-                    </span>
-                    <Show when={chapter.language}>
-                      <span class="text-xs text-[var(--text-muted)] bg-[var(--bg-tertiary)] px-2 py-0.5 rounded-full">
-                        {chapter.language?.toUpperCase()}
-                      </span>
-                    </Show>
-                  </div>
-                  <Show when={chapter.title}>
-                    <p class="text-sm text-[var(--text-secondary)] mt-1 truncate">
-                      {chapter.title}
-                    </p>
-                  </Show>
-                  <p class="text-xs text-[var(--text-muted)] mt-1">
-                    {chapter.pages} pages · {formatRelativeTime(new Date(chapter.publishedAt).getTime())}
-                  </p>
-                </div>
-                <svg
-                  class="w-5 h-5 text-[var(--text-muted)] group-hover:text-[var(--accent)] transition-colors flex-shrink-0 ml-2"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
+        <For each={visibleGroups()}>
+          {(group) => {
+            const chapter = () => selectedChapter(group);
+            return (
+              <div class="rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] hover:border-[var(--accent)] hover:bg-[var(--bg-tertiary)] transition-all duration-200 group overflow-hidden">
+                <button
+                  onClick={() => props.onReadChapter?.(chapter().id)}
+                  class="w-full text-left p-4"
                 >
-                  <path d="M9 18l6-6-6-6" />
-                </svg>
+                  <div class="flex items-center justify-between">
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-2">
+                        <span class="text-sm font-semibold text-[var(--accent-light)]">
+                          Ch. {group.chapterNumber}
+                        </span>
+                        <Show when={chapter().language}>
+                          <span class="text-xs text-[var(--text-muted)] bg-[var(--bg-tertiary)] px-2 py-0.5 rounded-full">
+                            {chapter().language?.toUpperCase()}
+                          </span>
+                        </Show>
+                      </div>
+                      <Show when={chapter().title}>
+                        <p class="text-sm text-[var(--text-secondary)] mt-1 truncate">
+                          {chapter().title}
+                        </p>
+                      </Show>
+                      <p class="text-xs text-[var(--text-muted)] mt-1">
+                        {chapter().pages} pages · {formatRelativeTime(new Date(chapter().publishedAt).getTime())}
+                      </p>
+                    </div>
+                    <svg
+                      class="w-5 h-5 text-[var(--text-muted)] group-hover:text-[var(--accent)] transition-colors flex-shrink-0 ml-2"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path d="M9 18l6-6-6-6" />
+                    </svg>
+                  </div>
+                </button>
+                <Show when={group.releases.length > 1}>
+                  <div class="flex items-center gap-2 px-4 pb-3 flex-wrap">
+                    <span class="text-xs text-[var(--text-muted)]">Source:</span>
+                    <For each={group.releases}>
+                      {(release, i) => (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedRelease((prev) => ({ ...prev, [group.chapterNumber]: i() }));
+                          }}
+                          class={classNames(
+                            "px-2 py-1 rounded-md text-xs font-medium transition-colors",
+                            i() === selectedIndex(group)
+                              ? "bg-[var(--accent)] text-white"
+                              : "bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                          )}
+                        >
+                          {truncateText(releaseLabel(release, i()), 24)}
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </Show>
               </div>
-            </button>
-          )}
+            );
+          }}
         </For>
       </div>
 
-      <Show when={props.chapters.length > 50}>
+      <Show when={allGroups().length > 50}>
         <button
           onClick={() => setShowAll(!showAll())}
           class="w-full py-3 text-sm font-medium text-[var(--accent-light)] hover:text-[var(--accent)] transition-colors"
         >
-          {showAll() ? "Show Less" : `Show All (${props.chapters.length} chapters)`}
+          {showAll() ? "Show Less" : `Show All (${allGroups().length} chapters)`}
         </button>
       </Show>
     </div>
