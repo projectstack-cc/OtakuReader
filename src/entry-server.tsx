@@ -1,5 +1,6 @@
 import { StartServer, createHandler } from "@solidjs/start/server";
 import { toWebHandler } from "h3";
+import { toNodeHandler } from "h3/node";
 import type { Component } from "solid-js";
 
 const Document: Component<{ assets?: import("solid-js").JSX.Element; scripts: import("solid-js").JSX.Element; children?: import("solid-js").JSX.Element }> = (props) => (
@@ -39,8 +40,20 @@ const render = () => {
 // @solidjs/start's own dev server and `vite preview` server expect from
 // this file (see `serverEntry.default.fetch(...)` in
 // node_modules/@solidjs/start/dist/config/dev-server.js). Matching it
-// means `vite dev`/`vite preview` work unmodified, and our Vercel
-// Function (api/render.ts) can just re-export dist/server/entry-server.js's
-// default.fetch too.
+// means `vite dev`/`vite preview` work unmodified.
+//
+// `node` is a *separate* export for api/render.ts: Vercel's Node.js
+// runtime (config.runtime = "nodejs") invokes functions with the classic
+// (req, res) Node signature, not a Web-standard (Request) => Response
+// signature — there's no automatic conversion for "nodejs" runtime the
+// way there is for "edge". Re-exporting `.fetch` directly there made
+// h3 receive a raw Node IncomingMessage as if it were a Web Request:
+// its `.url` is just the path ("/"), not absolute, so h3's internal
+// `new URL(event.request.url)` threw ERR_INVALID_URL, and because a
+// Fetch-style handler never calls `res.end()` itself, the Node response
+// was left hanging until Vercel's function-timeout fired (504
+// FUNCTION_INVOCATION_TIMEOUT, not the 500 the thrown error implied).
+// `toNodeHandler` from h3/node builds the absolute URL correctly from
+// the raw request's headers and writes the Response back onto `res`.
 const app = createHandler(render, { mode: "stream" });
-export default { fetch: toWebHandler(app) };
+export default { fetch: toWebHandler(app), node: toNodeHandler(app) };

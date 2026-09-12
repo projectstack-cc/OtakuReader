@@ -1,4 +1,7 @@
 {
+  "framework": null,
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
   "outputDirectory": "dist/client",
   "regions": ["sfo1"],
   "cleanUrls": true,
