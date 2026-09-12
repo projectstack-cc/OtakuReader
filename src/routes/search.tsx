@@ -1,9 +1,10 @@
 import { Component, createSignal, createEffect, For, Show, onMount } from "solid-js";
-import { useNavigate } from "@solidjs/router";
+import { useNavigate, useSearchParams } from "@solidjs/router";
 import { unifiedSearch, searchAniListDirect } from "~/lib/utils/api";
 import MangaCard from "~/lib/components/MangaCard";
 
 const SearchPage: Component = () => {
+  const [searchParams] = useSearchParams();
   const [query, setQuery] = createSignal("");
   const [results, setResults] = createSignal<any[]>([]);
   const [loading, setLoading] = createSignal(false);
@@ -12,6 +13,13 @@ const SearchPage: Component = () => {
   const [usingFallback, setUsingFallback] = createSignal(false);
   const navigate = useNavigate();
   let debounceTimer: number | undefined;
+
+  createEffect(() => {
+    const q = searchParams.q;
+    if (typeof q === "string" && q.trim() && q !== query()) {
+      setQuery(q);
+    }
+  });
 
   const handleSearch = async () => {
     const q = query().trim();

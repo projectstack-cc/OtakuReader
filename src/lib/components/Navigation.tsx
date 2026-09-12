@@ -105,7 +105,7 @@ const Navigation: Component = () => {
         />
       </div>
 
-      <nav class="tab-bar md:hidden" style={{ top: "48px", height: "calc(64px + 48px)" }}>
+      <nav class="tab-bar md:hidden">
         <For each={navItems}>
           {(item) => {
             const isActive = () => location.pathname === item.href || (item.href !== "/" && location.pathname.startsWith(item.href));

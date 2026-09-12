@@ -11,7 +11,7 @@ const App: Component = () => {
       root={(props) => (
         <div class="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] font-sans antialiased">
           <Suspense fallback={<LoadingSpinner />}>
-            <main class="pb-20 md:pb-0 md:pl-64">{props.children}</main>
+            <main class="pt-16 pb-20 md:pt-0 md:pb-0 md:pl-64">{props.children}</main>
           </Suspense>
           <Navigation />
           <PWAProvider />
