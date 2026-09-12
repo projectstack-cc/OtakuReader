@@ -32,7 +32,6 @@ interface ReaderProps {
 
 const STORAGE_KEY = "otakureader_reader_state";
 const TOOLBAR_HIDE_DELAY = 3000;
-const VIRTUALIZATION_BUFFER = 5;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 4;
 const ZOOM_STEP = 0.25;
@@ -47,7 +46,6 @@ const Reader: Component<ReaderProps> = (props) => {
   const [pageFit, setPageFit] = createSignal<"width" | "height" | "original">("width");
   const [zoomScale, setZoomScale] = createSignal(1);
   const [isPinching, setIsPinching] = createSignal(false);
-  const [renderedPages, setRenderedPages] = createSignal<Set<number>>(new Set());
   let containerRef: HTMLDivElement | undefined;
   let scrollTimeout: number | undefined;
   let hideTimer: number | undefined;
@@ -58,9 +56,6 @@ const Reader: Component<ReaderProps> = (props) => {
   let lastTapY = 0;
   let pinchStartDist = 0;
   let pinchStartScale = 1;
-  let observer: IntersectionObserver | undefined;
-  const pageObserverTargets = new Map<number, HTMLDivElement>();
-  const renderedPagesSet = new Set<number>();
 
   const resetHideTimer = () => {
     clearTimeout(hideTimer);
@@ -119,34 +114,6 @@ const Reader: Component<ReaderProps> = (props) => {
     const dx = touches[0].clientX - touches[1].clientX;
     const dy = touches[0].clientY - touches[1].clientY;
     return Math.sqrt(dx * dx + dy * dy);
-  };
-
-  const updateRenderedPages = (visibleIndices: Set<number>) => {
-    const newRendered = new Set<number>();
-    const total = props.pages.length;
-
-    visibleIndices.forEach((idx) => {
-      const start = Math.max(0, idx - VIRTUALIZATION_BUFFER);
-      const end = Math.min(total - 1, idx + VIRTUALIZATION_BUFFER);
-      for (let i = start; i <= end; i++) {
-        newRendered.add(i);
-      }
-    });
-
-    const cp = currentPage();
-    for (let i = Math.max(0, cp - VIRTUALIZATION_BUFFER); i <= Math.min(total - 1, cp + VIRTUALIZATION_BUFFER); i++) {
-      newRendered.add(i);
-    }
-
-    const changed =
-      newRendered.size !== renderedPagesSet.size ||
-      Array.from(newRendered).some((i) => !renderedPagesSet.has(i));
-
-    if (changed) {
-      renderedPagesSet.clear();
-      newRendered.forEach((i) => renderedPagesSet.add(i));
-      setRenderedPages(new Set(newRendered));
-    }
   };
 
   createEffect(() => {
@@ -282,25 +249,6 @@ const Reader: Component<ReaderProps> = (props) => {
       containerRef.style.setProperty("--zoom-origin-y", `${y * 100}%`);
     };
 
-    observer = new IntersectionObserver(
-      (entries) => {
-        const visible = new Set<number>();
-        entries.forEach((entry) => {
-          const idx = Number(entry.target.getAttribute("data-page-index"));
-          if (entry.isIntersecting && !isNaN(idx)) {
-            visible.add(idx);
-          }
-        });
-        if (visible.size > 0) {
-          updateRenderedPages(visible);
-        }
-      },
-      {
-        root: containerRef,
-        rootMargin: "100% 0px",
-      }
-    );
-
     containerRef?.addEventListener("scroll", handleScroll, { passive: true });
     window.addEventListener("keydown", handleKeyDown);
     containerRef?.addEventListener("touchstart", handleTouchStart, { passive: false });
@@ -315,14 +263,8 @@ const Reader: Component<ReaderProps> = (props) => {
       containerRef?.removeEventListener("touchstart", handleTouchStart);
       containerRef?.removeEventListener("touchmove", handleTouchMove);
       containerRef?.removeEventListener("touchend", handleTouchEnd);
-      if (observer) observer.disconnect();
       saveToHistory();
     };
-  });
-
-  createEffect(() => {
-    const cp = currentPage();
-    updateRenderedPages(new Set([cp]));
   });
 
   const scrollToPage = (page: number) => {
@@ -369,8 +311,6 @@ const Reader: Component<ReaderProps> = (props) => {
       showToolbarTemporarily();
     }
   };
-
-  const isRendered = (index: number) => renderedPages().has(index);
 
   const loadProgress = () => {
     if (!props.totalPages) return 0;
@@ -441,37 +381,20 @@ const Reader: Component<ReaderProps> = (props) => {
             <For each={props.pages}>
               {(src, index) => {
                 const pageIndex = index();
-                const rendered = () => isRendered(pageIndex);
-
                 return (
                   <div
                     data-page-index={pageIndex}
-                    ref={(el) => {
-                      if (el) {
-                        pageObserverTargets.set(pageIndex, el);
-                        if (observer) observer.observe(el);
-                      }
-                    }}
                     class="relative"
                     style={{ "min-height": "100vh" }}
                   >
-                    <Show when={rendered()} fallback={
-                      <div
-                        class="w-full bg-black flex items-center justify-center"
-                        style={{ "min-height": "100vh" }}
-                      >
-                        <div class="w-8 h-8 border-2 border-[var(--accent)]/30 border-t-transparent rounded-full animate-spin" />
-                      </div>
-                    }>
-                      <PageImage
-                        src={src}
-                        alt={`Page ${pageIndex + 1}`}
-                        page={pageIndex + 1}
-                        fit={pageFit()}
-                        isActive={pageIndex === currentPage()}
-                        onLoad={props.onPageLoad}
-                      />
-                    </Show>
+                    <PageImage
+                      src={src}
+                      alt={`Page ${pageIndex + 1}`}
+                      page={pageIndex + 1}
+                      fit={pageFit()}
+                      isActive={pageIndex === currentPage()}
+                      onLoad={props.onPageLoad}
+                    />
                   </div>
                 );
               }}
@@ -494,34 +417,20 @@ const Reader: Component<ReaderProps> = (props) => {
             <For each={props.pages}>
               {(src, index) => {
                 const pageIndex = index();
-                const rendered = () => isRendered(pageIndex);
-
                 return (
                   <div
                     data-page-index={pageIndex}
-                    ref={(el) => {
-                      if (el) {
-                        pageObserverTargets.set(pageIndex, el);
-                        if (observer) observer.observe(el);
-                      }
-                    }}
                     class="flex-shrink-0 h-full w-full flex items-center justify-center"
                     style={{ "min-height": "100vh" }}
                   >
-                    <Show when={rendered()} fallback={
-                      <div class="w-full h-full flex items-center justify-center bg-black">
-                        <div class="w-8 h-8 border-2 border-[var(--accent)]/30 border-t-transparent rounded-full animate-spin" />
-                      </div>
-                    }>
-                      <PageImage
-                        src={src}
-                        alt={`Page ${pageIndex + 1}`}
-                        page={pageIndex + 1}
-                        fit={pageFit()}
-                        isActive={pageIndex === currentPage()}
-                        onLoad={props.onPageLoad}
-                      />
-                    </Show>
+                    <PageImage
+                      src={src}
+                      alt={`Page ${pageIndex + 1}`}
+                      page={pageIndex + 1}
+                      fit={pageFit()}
+                      isActive={pageIndex === currentPage()}
+                      onLoad={props.onPageLoad}
+                    />
                   </div>
                 );
               }}
