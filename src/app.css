@@ -1,25 +1,25 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg-primary: #0f0f1a;
-  --color-bg-secondary: #1a1a2e;
-  --color-bg-tertiary: #252542;
-  --color-bg-elevated: #2d2d4a;
-  --color-text-primary: #e8e8f0;
-  --color-text-secondary: #a0a0b8;
-  --color-text-muted: #6b6b80;
-  --color-accent: #7c3aed;
-  --color-accent-light: #a78bfa;
-  --color-accent-dark: #5b21b6;
+  --color-bg-primary: #101312;
+  --color-bg-secondary: #171b1a;
+  --color-bg-tertiary: #1f2422;
+  --color-bg-elevated: #282e2b;
+  --color-text-primary: #e7ece9;
+  --color-text-secondary: #9ca3a0;
+  --color-text-muted: #6b716e;
+  --color-accent: #10b981;
+  --color-accent-light: #6ee7b7;
+  --color-accent-dark: #047857;
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-danger: #ef4444;
   --color-border: rgba(255, 255, 255, 0.08);
   --color-border-hover: rgba(255, 255, 255, 0.15);
-  --shadow-neumorph-light: rgba(46, 46, 72, 0.5);
-  --shadow-neumorph-dark: rgba(10, 10, 22, 0.7);
-  --shadow-neumorph-light-inset: rgba(46, 46, 72, 0.4);
-  --shadow-neumorph-dark-inset: rgba(10, 10, 22, 0.9);
+  --shadow-neumorph-light: rgba(40, 46, 43, 0.5);
+  --shadow-neumorph-dark: rgba(6, 8, 7, 0.7);
+  --shadow-neumorph-light-inset: rgba(40, 46, 43, 0.4);
+  --shadow-neumorph-dark-inset: rgba(6, 8, 7, 0.9);
   --radius-neumorph: 16px;
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -27,25 +27,25 @@
 }
 
 :root {
-  --bg-primary: #0f0f1a;
-  --bg-secondary: #1a1a2e;
-  --bg-tertiary: #252542;
-  --bg-elevated: #2d2d4a;
-  --text-primary: #e8e8f0;
-  --text-secondary: #a0a0b8;
-  --text-muted: #6b6b80;
-  --accent: #7c3aed;
-  --accent-light: #a78bfa;
-  --accent-dark: #5b21b6;
+  --bg-primary: #101312;
+  --bg-secondary: #171b1a;
+  --bg-tertiary: #1f2422;
+  --bg-elevated: #282e2b;
+  --text-primary: #e7ece9;
+  --text-secondary: #9ca3a0;
+  --text-muted: #6b716e;
+  --accent: #10b981;
+  --accent-light: #6ee7b7;
+  --accent-dark: #047857;
   --success: #10b981;
   --warning: #f59e0b;
   --danger: #ef4444;
   --border: rgba(255, 255, 255, 0.08);
   --border-hover: rgba(255, 255, 255, 0.15);
-  --shadow-neumorph-light: rgba(46, 46, 72, 0.5);
-  --shadow-neumorph-dark: rgba(10, 10, 22, 0.7);
-  --shadow-neumorph-light-inset: rgba(46, 46, 72, 0.4);
-  --shadow-neumorph-dark-inset: rgba(10, 10, 22, 0.9);
+  --shadow-neumorph-light: rgba(40, 46, 43, 0.5);
+  --shadow-neumorph-dark: rgba(6, 8, 7, 0.7);
+  --shadow-neumorph-light-inset: rgba(40, 46, 43, 0.4);
+  --shadow-neumorph-dark-inset: rgba(6, 8, 7, 0.9);
   --radius-neumorph: 16px;
 }
 
@@ -182,7 +182,7 @@
     align-items: center;
     z-index: 50;
     backdrop-filter: blur(12px);
-    background-color: rgba(26, 26, 46, 0.9);
+    background-color: rgba(23, 27, 26, 0.9);
   }
 
   .sidebar {
