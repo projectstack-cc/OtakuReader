@@ -58,25 +58,22 @@ const PageImage: Component<PageImageProps> = (props) => {
       class="relative w-full bg-black flex items-center justify-center overflow-auto"
       style={{ "min-height": props.fit === "width" ? "100vh" : "100vh" }}
     >
-      <Show
-        when={!loaded() && !error()}
-        fallback={
-          <img
-            ref={imgRef}
-            src={props.src}
-            alt={props.alt}
-            loading={props.isActive ? "eager" : "lazy"}
-            decoding="async"
-            onLoad={() => {
-              setLoaded(true);
-              props.onLoad?.();
-            }}
-            onError={() => setError(true)}
-            class={imgClass()}
-            style={imgStyle()}
-          />
-        }
-      >
+      <img
+        ref={imgRef}
+        src={props.src}
+        alt={props.alt}
+        loading={props.isActive ? "eager" : "lazy"}
+        decoding="async"
+        onLoad={() => {
+          setLoaded(true);
+          props.onLoad?.();
+        }}
+        onError={() => setError(true)}
+        class={imgClass()}
+        style={imgStyle()}
+      />
+
+      <Show when={!loaded() && !error()}>
         <div class="absolute inset-0 flex items-center justify-center">
           <div class="w-8 h-8 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
         </div>
