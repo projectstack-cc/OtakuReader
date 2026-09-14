@@ -9,6 +9,7 @@ interface Chapter {
   publishedAt: string;
   language?: string;
   scanlationGroup?: string[];
+  externalUrl?: string;
 }
 
 interface ChapterGroup {
@@ -164,7 +165,16 @@ const ChapterList: Component<ChapterListProps> = (props) => {
             return (
               <div class="rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] hover:border-[var(--accent)] hover:bg-[var(--bg-tertiary)] transition-all duration-200 group overflow-hidden">
                 <button
-                  onClick={() => props.onReadChapter?.(chapter().id)}
+                  onClick={() => {
+                    const ch = chapter();
+                    if (ch.externalUrl) {
+                      // Official external release (e.g. MangaPlus) — open the
+                      // publisher's reader in a new tab instead of ours.
+                      window.open(ch.externalUrl, "_blank", "noopener");
+                    } else {
+                      props.onReadChapter?.(ch.id);
+                    }
+                  }}
                   class="w-full text-left p-4"
                 >
                   <div class="flex items-center justify-between">
@@ -173,6 +183,11 @@ const ChapterList: Component<ChapterListProps> = (props) => {
                         <span class="text-sm font-semibold text-[var(--accent-light)]">
                           Ch. {group.chapterNumber}
                         </span>
+                        <Show when={chapter().externalUrl}>
+                          <span class="text-xs font-medium text-[var(--warning)] bg-[var(--warning)]/10 px-2 py-0.5 rounded-full">
+                            Official · opens externally
+                          </span>
+                        </Show>
                         <Show when={chapter().language}>
                           <span class="text-xs text-[var(--text-muted)] bg-[var(--bg-tertiary)] px-2 py-0.5 rounded-full">
                             {chapter().language?.toUpperCase()}
@@ -185,7 +200,9 @@ const ChapterList: Component<ChapterListProps> = (props) => {
                         </p>
                       </Show>
                       <p class="text-xs text-[var(--text-muted)] mt-1">
-                        {chapter().pages} pages · {formatRelativeTime(new Date(chapter().publishedAt).getTime())}
+                        <Show when={chapter().externalUrl} fallback={`${chapter().pages} pages · ${formatRelativeTime(new Date(chapter().publishedAt).getTime())}`}>
+                          {formatRelativeTime(new Date(chapter().publishedAt).getTime())}
+                        </Show>
                       </p>
                     </div>
                     <svg
@@ -195,7 +212,9 @@ const ChapterList: Component<ChapterListProps> = (props) => {
                       stroke="currentColor"
                       stroke-width="2"
                     >
-                      <path d="M9 18l6-6-6-6" />
+                      <Show when={chapter().externalUrl} fallback={<path d="M9 18l6-6-6-6" />}>
+                        <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" />
+                      </Show>
                     </svg>
                   </div>
                 </button>

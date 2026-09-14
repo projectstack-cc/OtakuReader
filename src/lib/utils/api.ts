@@ -24,6 +24,10 @@ interface NormalizedChapter {
   publishedAt: string;
   language?: string;
   scanlationGroup?: string[];
+  // Set for official external releases (e.g. MangaPlus simulpubs) — these
+  // have no hosted images but are real, readable English chapters opened in
+  // a new tab.
+  externalUrl?: string;
 }
 
 interface BrowseResult {
@@ -281,7 +285,11 @@ export async function getMangaFeed(id: string): Promise<NormalizedChapter[]> {
 
   const parseChapters = (data: any): NormalizedChapter[] =>
     (((data as any).data || []) as any[])
-      .filter((ch: any) => !ch.attributes?.externalUrl && (ch.attributes?.pages ?? 0) > 0)
+      // Keep external-URL chapters: they're official English releases (e.g.
+      // MangaPlus simulpubs) with no hosted images. ChapterList renders them
+      // as external links — hiding them made simulpub titles look like they
+      // were missing most of their chapters.
+      .filter((ch: any) => ch.attributes?.externalUrl || (ch.attributes?.pages ?? 0) > 0)
       .map((ch: any) => ({
         id: ch.id,
         chapter: ch.attributes?.chapter || "0",
@@ -289,6 +297,7 @@ export async function getMangaFeed(id: string): Promise<NormalizedChapter[]> {
         pages: ch.attributes?.pages || 0,
         publishedAt: ch.attributes?.publishAt || ch.attributes?.createdAt || "",
         language: ch.attributes?.translatedLanguage || "en",
+        externalUrl: ch.attributes?.externalUrl || undefined,
         scanlationGroup: ch.relationships
           ?.filter((r: any) => r.type === "scanlation_group")
           .map((r: any) => r.attributes?.name || r.id),

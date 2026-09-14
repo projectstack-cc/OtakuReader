@@ -51,15 +51,22 @@ const MangaDetailPage: Component = () => {
   const firstChapter = () => {
     const all = chapters();
     if (all.length === 0) return null;
-    const preferred = all.some((c) => c.language === "en")
-      ? all.filter((c) => c.language === "en")
-      : all;
-    return [...preferred].sort((a, b) => {
+    // Prefer hosted English chapters — external (official-link) chapters
+    // can't render in the in-app reader. Fall back to any English chapter,
+    // then to anything.
+    const hosted = all.filter((c) => !c.externalUrl && c.language === "en");
+    if (hosted.length > 0) return sortByNumber(hosted)[0];
+    const en = all.filter((c) => c.language === "en");
+    if (en.length > 0) return sortByNumber(en)[0];
+    return sortByNumber(all)[0];
+  };
+
+  const sortByNumber = (list: any[]) =>
+    [...list].sort((a, b) => {
       const na = parseFloat(a.chapter);
       const nb = parseFloat(b.chapter);
       return !isNaN(na) && !isNaN(nb) ? na - nb : String(a.chapter).localeCompare(String(b.chapter));
-    })[0];
-  };
+    });
 
   const toggleFavorite = () => {
     if (!manga()) return;
