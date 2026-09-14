@@ -37,9 +37,29 @@ interface FilterParams {
   status?: string[];
   demographic?: string;
   sort?: string;
+  sortDir?: "asc" | "desc";
   contentRating?: string[];
   limit?: number;
   offset?: number;
+  hasChapters?: boolean;
+}
+
+// MangaDex tag search requires UUIDs, but the UI stores display names.
+// Fetch the tag registry once and cache it for name -> id mapping.
+let tagRegistry: Array<{ id: string; name: string }> | null = null;
+export async function getMangaTags(): Promise<Array<{ id: string; name: string }>> {
+  if (tagRegistry) return tagRegistry;
+  try {
+    const res = await fetch(`${API_BASE}/manga/manga/tag`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    tagRegistry = ((data as any).data || [])
+      .map((t: any) => ({ id: t.id, name: t.attributes?.name?.en || "" }))
+      .filter((t: { name: string }) => t.name);
+    return tagRegistry!;
+  } catch {
+    return [];
+  }
 }
 
 interface AniListSearchResult {
@@ -303,10 +323,19 @@ export async function fetchBrowseManga(params: FilterParams): Promise<BrowseResu
   searchParams.set("limit", String(params.limit ?? 24));
   if (params.offset) searchParams.set("offset", String(params.offset));
   if (params.query) searchParams.set("title", params.query);
-  if (params.tags?.length) params.tags.forEach((t) => searchParams.append("tags[]", t));
+  if (params.tags?.length) {
+    // MangaDex manga search uses `includedTags[]` (with UUIDs) — `tags[]`
+    // silently matches nothing. Map UI display names to tag UUIDs.
+    const registry = await getMangaTags();
+    params.tags.forEach((name) => {
+      const id = registry.find((t) => t.name === name)?.id;
+      searchParams.append("includedTags[]", id || name);
+    });
+  }
   if (params.status?.length) params.status.forEach((s) => searchParams.append("status[]", s));
   if (params.demographic) searchParams.set("publicationDemographic[]", params.demographic);
-  if (params.sort) searchParams.set(`order[${params.sort}]`, "desc");
+  if (params.sort) searchParams.set(`order[${params.sort}]`, params.sortDir ?? "desc");
+  if (params.hasChapters) searchParams.set("hasAvailableChapters", "true");
   // English-only catalog for browse too — mirrors searchManga.
   searchParams.append("availableTranslatedLanguage[]", "en");
   searchParams.append("includes[]", "cover_art");

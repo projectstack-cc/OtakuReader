@@ -44,7 +44,7 @@ const DEMOGRAPHIC_OPTIONS: { value: string; label: string }[] = [
 
 const SORT_OPTIONS: { value: string; label: string }[] = [
   { value: "followedCount", label: "Popularity" },
-  { value: "averageRating", label: "Rating" },
+  { value: "rating", label: "Rating" },
   { value: "latestUploadedChapter", label: "Latest" },
   { value: "createdAt", label: "Oldest" },
   { value: "title", label: "Title" },
