@@ -84,8 +84,15 @@ const ChapterList: Component<ChapterListProps> = (props) => {
   const [selectedRelease, setSelectedRelease] = createSignal<Record<string, number>>({});
 
   const selectedIndex = (group: ChapterGroup) => {
-    const idx = selectedRelease()[group.chapterNumber] ?? 0;
+    const idx = selectedRelease()[group.chapterNumber] ?? defaultReleaseIndex(group);
     return idx < group.releases.length ? idx : 0;
+  };
+
+  // Default to the first release that actually has pages — the first-listed
+  // release may be a zero-page/external one, which renders as a broken read.
+  const defaultReleaseIndex = (group: ChapterGroup) => {
+    const withPages = group.releases.findIndex((r) => r.pages > 0);
+    return withPages >= 0 ? withPages : 0;
   };
 
   const selectedChapter = (group: ChapterGroup) => group.releases[selectedIndex(group)];

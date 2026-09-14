@@ -201,6 +201,9 @@ export async function searchManga(params: {
   if (params.contentRating) params.contentRating.forEach((r) => searchParams.append("contentRating[]", r));
   if (params.limit) searchParams.set("limit", String(params.limit));
   if (params.offset) searchParams.set("offset", String(params.offset));
+  // Only surface manga that actually have an English translation available,
+  // otherwise users click through to chapters they can't read.
+  searchParams.append("availableTranslatedLanguage[]", "en");
   searchParams.append("includes[]", "cover_art");
 
   const res = await fetch(`${API_BASE}/manga/manga?${searchParams.toString()}`);
@@ -246,21 +249,28 @@ export async function getMangaDetail(id: string): Promise<NormalizedManga> {
 }
 
 export async function getMangaFeed(id: string): Promise<NormalizedChapter[]> {
-  const res = await fetch(`${API_BASE}/manga/manga/${id}/feed?contentRating[]=safe&contentRating[]=suggestive&limit=500&includes[]=scanlation_group`);
+  // English-first feed: translatedLanguage[] filters server-side (MangaDex's
+  // language attribute is `translatedLanguage`, not `language`), order[] lets
+  // upstream sort. External-URL chapters (official simulpub links) have
+  // pages: 0 and no hosted images — skip them so they can't render as broken
+  // rows; readers can hit the official source directly.
+  const res = await fetch(`${API_BASE}/manga/manga/${id}/feed?contentRating[]=safe&contentRating[]=suggestive&limit=500&includes[]=scanlation_group&translatedLanguage[]=en&order[chapter]=asc`);
   if (!res.ok) throw new Error("Failed to fetch manga feed");
   const data = await res.json();
-  const chapters = (data as any).data || [];
-  return chapters.map((ch: any) => ({
-    id: ch.id,
-    chapter: ch.attributes?.chapter || "0",
-    title: typeof ch.attributes?.title === "string" ? ch.attributes.title : (ch.attributes?.title?.en || ch.attributes?.title?.["en-US"] || ""),
-    pages: ch.attributes?.pages || 0,
-    publishedAt: ch.attributes?.publishAt || ch.attributes?.createdAt || "",
-    language: ch.attributes?.language || "en",
-    scanlationGroup: ch.relationships
-      ?.filter((r: any) => r.type === "scanlation_group")
-      .map((r: any) => r.attributes?.name || r.id),
-  }));
+  const chapters = ((data as any).data || []) as any[];
+  return chapters
+    .filter((ch: any) => !ch.attributes?.externalUrl && (ch.attributes?.pages ?? 0) > 0)
+    .map((ch: any) => ({
+      id: ch.id,
+      chapter: ch.attributes?.chapter || "0",
+      title: typeof ch.attributes?.title === "string" ? ch.attributes.title : (ch.attributes?.title?.en || ch.attributes?.title?.["en-US"] || ""),
+      pages: ch.attributes?.pages || 0,
+      publishedAt: ch.attributes?.publishAt || ch.attributes?.createdAt || "",
+      language: ch.attributes?.translatedLanguage || "en",
+      scanlationGroup: ch.relationships
+        ?.filter((r: any) => r.type === "scanlation_group")
+        .map((r: any) => r.attributes?.name || r.id),
+    }));
 }
 
 export async function getChapterPages(mangaId: string, chapterId: string): Promise<string[]> {
@@ -272,7 +282,12 @@ export async function getChapterPages(mangaId: string, chapterId: string): Promi
   const data = await res.json();
   const baseUrl = data?.baseUrl;
   const hash = data?.chapter?.hash;
-  const filenames: string[] = Array.isArray(data?.chapter?.data) ? data.chapter.data : [];
+  let filenames: string[] = Array.isArray(data?.chapter?.data) ? data.chapter.data : [];
+  // Some chapters only expose the data-saver image set — fall back to it
+  // rather than rendering an empty reader.
+  if (filenames.length === 0 && Array.isArray(data?.chapter?.dataSaver)) {
+    filenames = data.chapter.dataSaver;
+  }
   if (!baseUrl || !hash || filenames.length === 0) return [];
   return filenames.map((f) => `${baseUrl}/data/${hash}/${f}`);
 }
@@ -292,6 +307,8 @@ export async function fetchBrowseManga(params: FilterParams): Promise<BrowseResu
   if (params.status?.length) params.status.forEach((s) => searchParams.append("status[]", s));
   if (params.demographic) searchParams.set("publicationDemographic[]", params.demographic);
   if (params.sort) searchParams.set(`order[${params.sort}]`, "desc");
+  // English-only catalog for browse too — mirrors searchManga.
+  searchParams.append("availableTranslatedLanguage[]", "en");
   searchParams.append("includes[]", "cover_art");
 
   const res = await fetch(`${API_BASE}/manga/manga?${searchParams.toString()}`);
