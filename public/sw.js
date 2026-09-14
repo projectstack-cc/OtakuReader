@@ -1,7 +1,7 @@
-const CACHE_NAME = "otakureader-v1";
-const STATIC_CACHE = "otakureader-static-v1";
-const IMAGE_CACHE = "otakureader-images-v1";
-const API_CACHE = "otakureader-api-v1";
+const CACHE_NAME = "otakureader-v2";
+const STATIC_CACHE = "otakureader-static-v2";
+const IMAGE_CACHE = "otakureader-images-v2";
+const API_CACHE = "otakureader-api-v2";
 
 const STATIC_ASSETS = ["/", "/manifest.json", "/favicon.ico"];
 
@@ -18,13 +18,13 @@ async function pruneImageCache() {
   }
 }
 
-self.addEventListener("install", (event: any) => {
+self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(STATIC_CACHE).then((cache) => cache.addAll(STATIC_ASSETS)).then(() => self.skipWaiting())
   );
 });
 
-self.addEventListener("activate", (event: any) => {
+self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(
@@ -36,7 +36,7 @@ self.addEventListener("activate", (event: any) => {
   );
 });
 
-self.addEventListener("fetch", (event: any) => {
+self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
@@ -45,22 +45,27 @@ self.addEventListener("fetch", (event: any) => {
   }
 
   if (url.pathname.startsWith("/api/")) {
+    // Network-first: always prefer fresh data, fall back to cache only when
+    // offline. Cache-first here served stale responses (e.g. expired at-home
+    // image URLs) forever and masked real fixes.
     event.respondWith(
-      caches.open(API_CACHE).then((cache) => {
-        return cache.match(request).then((cached) => {
-          const fetchPromise = fetch(request).then((response) => {
-            if (response && response.status === 200) {
-              const clone = response.clone();
-              cache.put(request, clone);
-            }
-            return response;
-          }).catch(() => {
-            if (cached) return cached;
-            return new Response("Offline", { status: 503 });
-          });
-          return cached || fetchPromise;
-        });
-      })
+      fetch(request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(API_CACHE).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() =>
+          caches.open(API_CACHE).then((cache) =>
+            cache.match(request).then(
+              (cached) =>
+                cached ||
+                new Response("Offline", { status: 503 })
+            )
+          )
+        )
     );
     return;
   }
