@@ -20,12 +20,12 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Search",
-    href: "/search",
+    label: "Browse",
+    href: "/browse",
     icon: (props) => (
       <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="11" cy="11" r="8" />
-        <path d="M21 21l-4.35-4.35" />
+        <circle cx="12" cy="12" r="10" />
+        <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
       </svg>
     ),
   },
