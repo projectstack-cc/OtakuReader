@@ -269,13 +269,15 @@ export async function getMangaDetail(id: string): Promise<NormalizedManga> {
 }
 
 export async function getMangaFeed(id: string): Promise<NormalizedChapter[]> {
-  // English-first feed: translatedLanguage[] filters server-side (MangaDex's
-  // language attribute is `translatedLanguage`, not `language`), order[] lets
-  // upstream sort. External-URL chapters (official simulpub links) have
+  // English-only feed. External-URL chapters (official simulpub links) have
   // pages: 0 and no hosted images — skip them so they can't render as broken
-  // rows; readers can hit the official source directly.
-  const fetchFeed = (langParams: string) =>
-    fetch(`${API_BASE}/manga/manga/${id}/feed?contentRating[]=safe&contentRating[]=suggestive&limit=500&includes[]=scanlation_group${langParams}`);
+  // rows. MangaDex caps feed requests at 500 items, so paginate with offset
+  // until the full chapter list is collected (long-runners like One Piece
+  // exceed 1000 chapters).
+  const fetchPage = (offset: number) =>
+    fetch(
+      `${API_BASE}/manga/manga/${id}/feed?contentRating[]=safe&contentRating[]=suggestive&includes[]=scanlation_group&translatedLanguage[]=en&order[chapter]=asc&limit=500&offset=${offset}`,
+    );
 
   const parseChapters = (data: any): NormalizedChapter[] =>
     (((data as any).data || []) as any[])
@@ -292,20 +294,27 @@ export async function getMangaFeed(id: string): Promise<NormalizedChapter[]> {
           .map((r: any) => r.attributes?.name || r.id),
       }));
 
-  let res = await fetchFeed("&translatedLanguage[]=en&order[chapter]=asc");
-  if (!res.ok) throw new Error("Failed to fetch manga feed");
-  let chapters = parseChapters(await res.json());
+  const all: NormalizedChapter[] = [];
+  const offsetStep = 500;
+  const maxChapters = 5000; // hard stop against runaway pagination
+  let offset = 0;
 
-  // Fallback: some manga have no English translations at all — an empty list
-  // would read as "chapters failed to load". Surface whatever languages do
-  // exist instead (the ChapterList language selector still lets users filter).
-  if (chapters.length === 0) {
-    res = await fetchFeed("&order[chapter]=asc");
-    if (!res.ok) throw new Error("Failed to fetch manga feed");
-    chapters = parseChapters(await res.json());
+  for (;;) {
+    const res = await fetchPage(offset);
+    if (!res.ok) {
+      if (all.length > 0) break; // return what we already have
+      throw new Error("Failed to fetch manga feed");
+    }
+    const data = await res.json();
+    const rawCount = Array.isArray(data?.data) ? data.data.length : 0;
+    all.push(...parseChapters(data));
+    offset += offsetStep;
+    // Stop when the upstream page wasn't full — that's the real end,
+    // regardless of how many entries the zero-page/external filter removed.
+    if (rawCount < offsetStep || offset >= maxChapters) break;
   }
 
-  return chapters;
+  return all;
 }
 
 export async function getChapterPages(mangaId: string, chapterId: string): Promise<string[]> {
@@ -487,19 +496,24 @@ export async function unifiedSearch(query: string): Promise<NormalizedManga[]> {
     const anilistEntry = group.find((g) => g.source === "anilist");
     const mangadexEntry = group.find((g) => g.source === "mangadex");
 
+    // Only MangaDex-sourced results are readable here — AniList/Jikan IDs
+    // don't exist on MangaDex, so navigating to /manga/<their-id> fails.
+    // Metadata sources still enrich MangaDex entries via the merge below.
+    if (!mangadexEntry) return;
+
     const result: NormalizedManga = {
-      id: mangadexEntry?.id || anilistEntry?.id || primary.id,
-      title: mangadexEntry?.title || anilistEntry?.title || primary.title,
-      coverUrl: mangadexEntry?.coverUrl || anilistEntry?.coverUrl || primary.coverUrl,
-      description: mangadexEntry?.description || anilistEntry?.description || primary.description,
-      score: mangadexEntry?.score ?? anilistEntry?.score ?? primary.score,
-      genres: mangadexEntry?.genres || anilistEntry?.genres || primary.genres,
-      tags: mangadexEntry?.tags || primary.tags,
-      status: mangadexEntry?.status || anilistEntry?.status || primary.status,
-      year: mangadexEntry?.year || primary.year,
-      chapters: mangadexEntry?.chapters ?? anilistEntry?.chapters,
-      volumes: mangadexEntry?.volumes ?? anilistEntry?.volumes,
-      source: mangadexEntry?.source || "mangadex",
+      id: mangadexEntry.id,
+      title: mangadexEntry.title || anilistEntry?.title || primary.title,
+      coverUrl: mangadexEntry.coverUrl || anilistEntry?.coverUrl || primary.coverUrl,
+      description: mangadexEntry.description || anilistEntry?.description || primary.description,
+      score: mangadexEntry.score ?? anilistEntry?.score ?? primary.score,
+      genres: mangadexEntry.genres || anilistEntry?.genres || primary.genres,
+      tags: mangadexEntry.tags || primary.tags,
+      status: mangadexEntry.status || anilistEntry?.status || primary.status,
+      year: mangadexEntry.year || primary.year,
+      chapters: mangadexEntry.chapters ?? anilistEntry?.chapters,
+      volumes: mangadexEntry.volumes ?? anilistEntry?.volumes,
+      source: "mangadex",
     };
 
     merged.push(result);
