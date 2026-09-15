@@ -200,7 +200,13 @@ const ChapterList: Component<ChapterListProps> = (props) => {
                         </p>
                       </Show>
                       <p class="text-xs text-[var(--text-muted)] mt-1">
-                        <Show when={chapter().externalUrl} fallback={`${chapter().pages} pages · ${formatRelativeTime(new Date(chapter().publishedAt).getTime())}`}>
+                        <Show when={chapter().externalUrl} fallback={
+                          chapter().pages > 0
+                            ? `${chapter().pages} pages · ${formatRelativeTime(new Date(chapter().publishedAt).getTime())}`
+                            : chapter().publishedAt
+                              ? formatRelativeTime(new Date(chapter().publishedAt).getTime())
+                              : "in-app reader"
+                        }>
                           {formatRelativeTime(new Date(chapter().publishedAt).getTime())}
                         </Show>
                       </p>

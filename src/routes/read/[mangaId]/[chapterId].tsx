@@ -1,6 +1,6 @@
 import { Component, createSignal, createEffect, Show, onMount, onCleanup, For } from "solid-js";
 import { useParams, useNavigate } from "@solidjs/router";
-import { getChapterPages, getMangaFeed } from "~/lib/utils/api";
+import { getChapterPages, getMangaFeed, getMangaDetail, getConsumetChapterPages } from "~/lib/utils/api";
 import Reader from "~/lib/components/Reader";
 import LoadingSpinner from "~/lib/components/LoadingSpinner";
 import ResumePrompt from "~/lib/components/ResumePrompt";
@@ -47,12 +47,17 @@ const ReadPage: Component = () => {
   const fetchChapterData = async () => {
     try {
       setLoading(true);
+      const sourceParam = params.mangaId.includes("::") ? `&source=${encodeURIComponent(params.mangaId.split("::")[0])}` : "";
       const [fetchedPages, mangaDetail] = await Promise.allSettled([
-        getChapterPages(params.mangaId, params.chapterId),
-        fetch(`/api/manga/manga/${params.mangaId}?includes[]=cover_art`).then((r) => {
+        params.mangaId.includes("::")
+          ? getConsumetChapterPages(params.chapterId)
+          : getChapterPages(params.mangaId, params.chapterId),
+        (async () => {
+          if (params.mangaId.includes("::")) return getMangaDetail(params.mangaId);
+          const r = await fetch(`/api/manga/manga/${params.mangaId}?includes[]=cover_art`);
           if (!r.ok) throw new Error("Failed to fetch manga detail");
           return r.json();
-        }),
+        })(),
       ]);
 
       if (fetchedPages.status === "fulfilled") {
@@ -69,11 +74,16 @@ const ReadPage: Component = () => {
       }
 
       if (mangaDetail.status === "fulfilled") {
-        const manga = mangaDetail.value.data || mangaDetail.value;
-        setMangaTitle(manga.attributes?.title?.en || manga.attributes?.title?.["en-US"] || Object.values(manga.attributes?.title || {})[0] || "Unknown Manga");
-        const coverRel = manga.relationships?.find((r: any) => r.type === "cover_art");
-        if (coverRel) {
-          setCoverFileName(coverRel.attributes?.fileName || "");
+        if (params.mangaId.includes("::")) {
+          const md: any = mangaDetail.value;
+          setMangaTitle(md?.title || "Unknown Manga");
+        } else {
+          const manga = (mangaDetail.value as any).data || mangaDetail.value;
+          setMangaTitle(manga.attributes?.title?.en || manga.attributes?.title?.["en-US"] || Object.values(manga.attributes?.title || {})[0] || "Unknown Manga");
+          const coverRel = manga.relationships?.find((r: any) => r.type === "cover_art");
+          if (coverRel) {
+            setCoverFileName(coverRel.attributes?.fileName || "");
+          }
         }
       }
 

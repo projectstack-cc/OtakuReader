@@ -236,6 +236,7 @@ export async function searchManga(params: {
   const mangas = (data as any).data || (data as any).results || [];
   return mangas.map((m: any) => {
     const coverRel = m.relationships?.find((r: any) => r.type === "cover_art");
+    const lastChapter = Number(m.attributes?.lastChapter);
     return {
       id: m.id,
       title: extractTitle(m.attributes?.title),
@@ -246,11 +247,50 @@ export async function searchManga(params: {
       tags: m.attributes?.tags?.map((t: any) => t.attributes?.name?.en || ""),
       status: m.attributes?.status,
       year: m.attributes?.year,
+      chapters: Number.isFinite(lastChapter) ? lastChapter : undefined,
     };
   });
 }
 
+export function isConsumetId(id: string): boolean {
+  return typeof id === "string" && id.startsWith("consumet::");
+}
+
 export async function getMangaDetail(id: string): Promise<NormalizedManga> {
+  if (isConsumetId(id)) {
+    const data = await getConsumetInfo(id.replace(/^consumet::/, ""));
+    if (!data) {
+      return {
+        id: id.replace(/^consumet::/, ""),
+        title: "Unknown Manga",
+        coverUrl: undefined,
+        coverFileName: "",
+        description: undefined,
+        score: undefined,
+        genres: [],
+        tags: [],
+        status: undefined,
+        year: undefined,
+        chapters: undefined,
+        volumes: undefined,
+      };
+    }
+    return {
+      id: data.id,
+      title: data.title,
+      coverUrl: data.image ? consumetImageProxy(data.image) : undefined,
+      coverFileName: "",
+      description: data.description || undefined,
+      score: undefined,
+      genres: data.genres,
+      tags: data.genres,
+      status: undefined,
+      year: undefined,
+      chapters: undefined,
+      volumes: undefined,
+    };
+  }
+
   const res = await fetch(`${API_BASE}/manga/manga/${id}?includes[]=cover_art`);
   if (!res.ok) throw new Error("Failed to fetch manga detail");
   const data = await res.json();
@@ -273,6 +313,20 @@ export async function getMangaDetail(id: string): Promise<NormalizedManga> {
 }
 
 export async function getMangaFeed(id: string): Promise<NormalizedChapter[]> {
+  if (isConsumetId(id)) {
+    const data = await getConsumetInfo(id.replace(/^consumet::/, ""));
+    if (!data) return [];
+    return data.chapters.map((c) => ({
+      id: c.id,
+      chapter: c.chapter || "0",
+      title: c.title || undefined,
+      pages: 0,
+      publishedAt: "",
+      language: "en",
+      scanlationGroup: undefined,
+    }));
+  }
+
   // English-only feed. External-URL chapters (official simulpub links) have
   // pages: 0 and no hosted images — skip them so they can't render as broken
   // rows. MangaDex caps feed requests at 500 items, so paginate with offset
@@ -480,49 +534,156 @@ export async function searchJikan(query: string): Promise<NormalizedManga[]> {
   }
 }
 
+// ---- Consumet (MangaPill, full English scanlation catalog) ----
+
+const CONSUMET_BASE = `${API_BASE}/consumet`;
+
+export interface ConsumetSearchResult {
+  id: string;
+  title: string;
+  image: string;
+}
+
+export interface ConsumetChapterInfo {
+  id: string;
+  title: string;
+  chapter?: string;
+}
+
+export interface ConsumetMangaInfo {
+  id: string;
+  title: string;
+  description?: string;
+  genres?: string[];
+  image?: string;
+  chapters: ConsumetChapterInfo[];
+}
+
+export async function searchConsumet(query: string): Promise<ConsumetSearchResult[]> {
+  try {
+    const res = await fetch(`${CONSUMET_BASE}/search/${encodeURIComponent(query)}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data?.value?.results ?? data?.results ?? []) as ConsumetSearchResult[];
+  } catch {
+    return [];
+  }
+}
+
+export async function getConsumetInfo(id: string): Promise<ConsumetMangaInfo | null> {
+  try {
+    const res = await fetch(`${CONSUMET_BASE}/info?id=${encodeURIComponent(id)}`);
+    if (!res.ok) return null;
+    const raw = await res.json();
+    const data = raw?.value ?? raw;
+    if (!data || !data.id) return null;
+    return {
+      id: data.id,
+      title: typeof data.title === 'string' ? data.title : data.title?.english || data.title?.romaji || '',
+      description: typeof data.description === 'string' ? data.description : '',
+      genres: Array.isArray(data.genres) ? data.genres.filter((g: unknown) => typeof g === 'string' && g.trim()) : [],
+      image: typeof data.image === 'string' ? data.image : undefined,
+      chapters: Array.isArray(data.chapters)
+        ? data.chapters.map((c: any) => ({ id: c.id, title: c.title || '', chapter: c.chapter }))
+        : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function getConsumetChapterPages(chapterId: string): Promise<string[]> {
+  try {
+    const res = await fetch(`${CONSUMET_BASE}/read?chapterId=${encodeURIComponent(chapterId)}`);
+    if (!res.ok) return [];
+    const raw = await res.json();
+    const pages = raw?.value ?? raw;
+    // Real response is an array of { img, page }. Every URL MangaPill returns
+    // is already a full CDN URL usable directly — don't route through the
+    // same-origin image proxy (the proxy's Referer/UA pattern doesn't match
+    // whatever MangaPill's CDN expects and can 502 on some hosts).
+    if (!Array.isArray(pages)) return [];
+    return pages
+      .map((p: any) => (typeof p === 'string' ? p : p?.img))
+      .filter((u: unknown): u is string => typeof u === 'string' && /^https?:\/\//i.test(u));
+  } catch {
+    return [];
+  }
+}
+
+export function consumetImageProxy(url: string): string {
+  return `${CONSUMET_BASE}/image?url=${encodeURIComponent(url)}`;
+}
+
 export async function unifiedSearch(query: string): Promise<NormalizedManga[]> {
-  const [mangaDexResults, anilistResults, jikanResults] = await Promise.allSettled([
+  const [mangaDexResults, consumetResults, anilistResults, jikanResults] = await Promise.allSettled([
     searchManga({ title: query, contentRating: ["safe", "suggestive"], limit: 20 }),
+    searchConsumet(query),
     searchAniList(query),
     searchJikan(query),
   ]);
 
   const md = mangaDexResults.status === "fulfilled" ? mangaDexResults.value.map((m: any) => ({ ...m, source: "mangadex" })) : [];
+  const cm: NormalizedManga[] = consumetResults.status === "fulfilled"
+    ? consumetResults.value.map((c) => ({
+        // Use "consumet::" prefix (router-safe; "/" would split the route)
+        // so Consumet entries flow to the Consumet detail/reader path.
+        id: `consumet::${c.id}`,
+        title: c.title,
+        coverUrl: c.image ? consumetImageProxy(c.image) : undefined,
+        source: "consumet",
+      }))
+    : [];
   const al = anilistResults.status === "fulfilled" ? anilistResults.value : [];
   const jk = jikanResults.status === "fulfilled" ? jikanResults.value : [];
 
-  const deduped = deduplicateResults(md, al, jk);
+  const deduped = deduplicateResults(md, cm, al, jk);
 
   const merged: NormalizedManga[] = [];
   const seen = new Set<string>();
 
   deduped.forEach((group) => {
     const primary = group[0];
-    const key = normalizeTitle(primary.title);
-    if (seen.has(key)) return;
-    seen.add(key);
+    const titleCandidate = group.find((g) => g.title && normalizeTitle(g.title) !== "");
+    const dedupKey = titleCandidate ? normalizeTitle(titleCandidate.title) : normalizeTitle(primary.title);
+    if (seen.has(dedupKey)) return;
+    seen.add(dedupKey);
 
     const anilistEntry = group.find((g) => g.source === "anilist");
     const mangadexEntry = group.find((g) => g.source === "mangadex");
+    const consumetEntry = group.find((g) => g.source === "consumet");
 
-    // Only MangaDex-sourced results are readable here — AniList/Jikan IDs
-    // don't exist on MangaDex, so navigating to /manga/<their-id> fails.
-    // Metadata sources still enrich MangaDex entries via the merge below.
-    if (!mangadexEntry) return;
+    // Readable here = MangaDex or Consumet IDs. AniList/Jikan IDs don't
+    // resolve to a detail page, but still enrich MangaDex entries below.
+    if (!mangadexEntry && !consumetEntry) return;
+
+    // When both MD and Consumet have a result for the same title, prefer
+    // Consumet if MD's catalog is thin (0 chapters = the series is DMCA'd
+    // out of MD's English feed, e.g. the real One Piece has only 12 hosted
+    // EN chapters while Consumet has 1209). When MD has chapters, keep MD —
+    // those are hosted images, not scraped. When only one source exists,
+    // use it.
+    const mdHasContent = !!(mangadexEntry && Number.isFinite(mangadexEntry.chapters) && mangadexEntry.chapters! >= 100);
+    const useConsumet = !!(mangadexEntry && consumetEntry && !mdHasContent);
+    const useMd = !useConsumet;
 
     const result: NormalizedManga = {
-      id: mangadexEntry.id,
-      title: mangadexEntry.title || anilistEntry?.title || primary.title,
-      coverUrl: mangadexEntry.coverUrl || anilistEntry?.coverUrl || primary.coverUrl,
-      description: mangadexEntry.description || anilistEntry?.description || primary.description,
-      score: mangadexEntry.score ?? anilistEntry?.score ?? primary.score,
-      genres: mangadexEntry.genres || anilistEntry?.genres || primary.genres,
-      tags: mangadexEntry.tags || primary.tags,
-      status: mangadexEntry.status || anilistEntry?.status || primary.status,
-      year: mangadexEntry.year || primary.year,
-      chapters: mangadexEntry.chapters ?? anilistEntry?.chapters,
-      volumes: mangadexEntry.volumes ?? anilistEntry?.volumes,
-      source: "mangadex",
+      id: useConsumet
+        ? (consumetEntry ? `consumet::${consumetEntry.id}` : primary.id)
+        : (mangadexEntry ? mangadexEntry.id : primary.id),
+      title: mangadexEntry?.title || consumetEntry?.title || anilistEntry?.title || primary.title,
+      coverUrl: useConsumet
+        ? (consumetEntry?.coverUrl || mangadexEntry?.coverUrl || anilistEntry?.coverUrl || primary.coverUrl)
+        : (mangadexEntry?.coverUrl || consumetEntry?.coverUrl || anilistEntry?.coverUrl || primary.coverUrl),
+      description: mangadexEntry?.description || anilistEntry?.description || primary.description,
+      score: mangadexEntry?.score ?? anilistEntry?.score ?? primary.score,
+      genres: mangadexEntry?.genres || anilistEntry?.genres || primary.genres,
+      tags: mangadexEntry?.tags || primary.tags,
+      status: mangadexEntry?.status || anilistEntry?.status || primary.status,
+      year: mangadexEntry?.year || primary.year,
+      chapters: useMd ? (mangadexEntry?.chapters ?? anilistEntry?.chapters) : undefined,
+      volumes: useMd ? (mangadexEntry?.volumes ?? anilistEntry?.volumes) : undefined,
+      source: useConsumet ? "consumet" : "mangadex",
     };
 
     merged.push(result);
