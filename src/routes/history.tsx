@@ -2,7 +2,7 @@ import { Component, Show, For } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import MangaCard from "~/lib/components/MangaCard";
 import { history, historyActions, type ReadingHistoryEntry } from "~/lib/stores/history";
-import { formatRelativeTime } from "~/lib/utils/helpers";
+import { formatRelativeTime, encodeId } from "~/lib/utils/helpers";
 
 const HistoryPage: Component = () => {
   const navigate = useNavigate();
@@ -99,7 +99,7 @@ const HistoryPage: Component = () => {
                     <For each={entries}>
                       {(entry) => (
                         <button
-                          onClick={() => navigate(`/read/${entry.mangaId}/${entry.chapterId}`)}
+                          onClick={() => navigate(`/read/${encodeId(entry.mangaId)}/${encodeId(entry.chapterId)}`)}
                           class="w-full text-left p-4 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] hover:border-[var(--accent)] hover:bg-[var(--bg-tertiary)] transition-all"
                         >
                           <div class="flex items-center justify-between">

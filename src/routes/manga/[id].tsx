@@ -5,10 +5,14 @@ import MangaCard from "~/lib/components/MangaCard";
 import ChapterList from "~/lib/components/ChapterList";
 import { favoritesActions } from "~/lib/stores/favorites";
 import { readerActions } from "~/lib/stores/reader";
-import { classNames } from "~/lib/utils/helpers";
+import { classNames, encodeId, decodeId } from "~/lib/utils/helpers";
 
 const MangaDetailPage: Component = () => {
-  const params = useParams<{ id: string }>();
+  const rawParams = useParams<{ id: string }>();
+  // Route params may arrive percent-encoded; decode before use.
+  const params = new Proxy({} as { id: string }, {
+    get: (_, key: string) => decodeId((rawParams as any)[key] ?? ""),
+  });
   const navigate = useNavigate();
   const [manga, setManga] = createSignal<any>(null);
   const [chapters, setChapters] = createSignal<any[]>([]);
@@ -45,7 +49,7 @@ const MangaDetailPage: Component = () => {
 
   const handleReadChapter = (chapterId: string) => {
     readerActions.openChapter(params.id, chapterId);
-    navigate(`/read/${params.id}/${chapterId}`);
+    navigate(`/read/${encodeId(params.id)}/${encodeId(chapterId)}`);
   };
 
   const firstChapter = () => {

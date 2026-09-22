@@ -3,6 +3,7 @@ import { useNavigate } from "@solidjs/router";
 import MangaCard from "~/lib/components/MangaCard";
 import FilterPanel, { FilterState } from "~/lib/components/FilterPanel";
 import { fetchBrowseManga } from "~/lib/utils/api";
+import { encodeId } from "~/lib/utils/helpers";
 
 const DEFAULT_FILTERS: FilterState = {
   query: "",
@@ -161,7 +162,7 @@ const BrowsePage: Component = () => {
   };
 
   const handleMangaClick = (id: string) => {
-    navigate(`/manga/${id}`);
+    navigate(`/manga/${encodeId(id)}`);
   };
 
   const showFilterPanel = () => activeList() === "all";

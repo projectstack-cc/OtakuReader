@@ -28,6 +28,12 @@ interface NormalizedChapter {
   // have no hosted images but are real, readable English chapters opened in
   // a new tab.
   externalUrl?: string;
+  // Which provider the external link belongs to ("mangaplus" for Shueisha's
+  // official service). Enables the in-app MangaPlus fallback in the reader.
+  externalSource?: string;
+  // Raw chapter number on the external provider (e.g. "1122"), used to
+  // resolve the same chapter via the provider's direct API.
+  externalChapterNumber?: string;
 }
 
 interface BrowseResult {
@@ -252,45 +258,7 @@ export async function searchManga(params: {
   });
 }
 
-export function isConsumetId(id: string): boolean {
-  return typeof id === "string" && id.startsWith("consumet::");
-}
-
 export async function getMangaDetail(id: string): Promise<NormalizedManga> {
-  if (isConsumetId(id)) {
-    const data = await getConsumetInfo(id.replace(/^consumet::/, ""));
-    if (!data) {
-      return {
-        id: id.replace(/^consumet::/, ""),
-        title: "Unknown Manga",
-        coverUrl: undefined,
-        coverFileName: "",
-        description: undefined,
-        score: undefined,
-        genres: [],
-        tags: [],
-        status: undefined,
-        year: undefined,
-        chapters: undefined,
-        volumes: undefined,
-      };
-    }
-    return {
-      id: data.id,
-      title: data.title,
-      coverUrl: data.image ? consumetImageProxy(data.image) : undefined,
-      coverFileName: "",
-      description: data.description || undefined,
-      score: undefined,
-      genres: data.genres,
-      tags: data.genres,
-      status: undefined,
-      year: undefined,
-      chapters: undefined,
-      volumes: undefined,
-    };
-  }
-
   const res = await fetch(`${API_BASE}/manga/manga/${id}?includes[]=cover_art`);
   if (!res.ok) throw new Error("Failed to fetch manga detail");
   const data = await res.json();
@@ -313,25 +281,16 @@ export async function getMangaDetail(id: string): Promise<NormalizedManga> {
 }
 
 export async function getMangaFeed(id: string): Promise<NormalizedChapter[]> {
-  if (isConsumetId(id)) {
-    const data = await getConsumetInfo(id.replace(/^consumet::/, ""));
-    if (!data) return [];
-    return data.chapters.map((c) => ({
-      id: c.id,
-      chapter: c.chapter || "0",
-      title: c.title || undefined,
-      pages: 0,
-      publishedAt: "",
-      language: "en",
-      scanlationGroup: undefined,
-    }));
-  }
-
   // English-only feed. External-URL chapters (official simulpub links) have
-  // pages: 0 and no hosted images — skip them so they can't render as broken
-  // rows. MangaDex caps feed requests at 500 items, so paginate with offset
-  // until the full chapter list is collected (long-runners like One Piece
-  // exceed 1000 chapters).
+  // pages: 0 and no hosted images — keep them: they're real, readable English
+  // chapters (MangaPlus) opened in a new tab, and for heavily DMCA'd licensed
+  // titles they're the only English chapters MangaDex lists.
+  //
+  // For titles whose English feed comes back empty (the DMCA pattern:
+  // MangaDex keeps the series page but hosts no English chapters), the feed
+  // is overlaid with the full official chapter list from the MangaPlus API
+  // (Shueisha's own service), mapped via title match. The overlay only ADDS
+  // chapters; it never removes or replaces MangaDex entries.
   const fetchPage = (offset: number) =>
     fetch(
       `${API_BASE}/manga/manga/${id}/feed?contentRating[]=safe&contentRating[]=suggestive&includes[]=scanlation_group&translatedLanguage[]=en&order[chapter]=asc&limit=500&offset=${offset}`,
@@ -339,28 +298,33 @@ export async function getMangaFeed(id: string): Promise<NormalizedChapter[]> {
 
   const parseChapters = (data: any): NormalizedChapter[] =>
     (((data as any).data || []) as any[])
-      // Keep external-URL chapters: they're official English releases (e.g.
-      // MangaPlus simulpubs) with no hosted images. ChapterList renders them
-      // as external links — hiding them made simulpub titles look like they
-      // were missing most of their chapters.
       .filter((ch: any) => ch.attributes?.externalUrl || (ch.attributes?.pages ?? 0) > 0)
-      .map((ch: any) => ({
-        id: ch.id,
-        chapter: ch.attributes?.chapter || "0",
-        title: typeof ch.attributes?.title === "string" ? ch.attributes.title : (ch.attributes?.title?.en || ch.attributes?.title?.["en-US"] || ""),
-        pages: ch.attributes?.pages || 0,
-        publishedAt: ch.attributes?.publishAt || ch.attributes?.createdAt || "",
-        language: ch.attributes?.translatedLanguage || "en",
-        externalUrl: ch.attributes?.externalUrl || undefined,
-        scanlationGroup: ch.relationships
-          ?.filter((r: any) => r.type === "scanlation_group")
-          .map((r: any) => r.attributes?.name || r.id),
-      }));
+      .map((ch: any) => {
+        const externalUrl: string | undefined = ch.attributes?.externalUrl || undefined;
+        const isMangaPlus = !!externalUrl && /mangaplus\.shueisha\.co\.(jp|kr)|jumpg-webtoken/.test(externalUrl);
+        return {
+          id: ch.id,
+          chapter: ch.attributes?.chapter || "0",
+          title: typeof ch.attributes?.title === "string" ? ch.attributes.title : (ch.attributes?.title?.en || ch.attributes?.title?.["en-US"] || ""),
+          pages: ch.attributes?.pages || 0,
+          publishedAt: ch.attributes?.publishAt || ch.attributes?.createdAt || "",
+          language: ch.attributes?.translatedLanguage || "en",
+          externalUrl,
+          // MangaPlus-sourced chapters: remember the raw chapter number so the
+          // direct MangaPlus reader fallback can locate the same chapter.
+          externalSource: isMangaPlus ? "mangaplus" : undefined,
+          externalChapterNumber: isMangaPlus ? ch.attributes?.chapter || undefined : undefined,
+          scanlationGroup: ch.relationships
+            ?.filter((r: any) => r.type === "scanlation_group")
+            .map((r: any) => r.attributes?.name || r.id),
+        };
+      });
 
   const all: NormalizedChapter[] = [];
   const offsetStep = 500;
   const maxChapters = 5000; // hard stop against runaway pagination
   let offset = 0;
+  let sawUpstreamEntry = false;
 
   for (;;) {
     const res = await fetchPage(offset);
@@ -369,12 +333,37 @@ export async function getMangaFeed(id: string): Promise<NormalizedChapter[]> {
       throw new Error("Failed to fetch manga feed");
     }
     const data = await res.json();
-    const rawCount = Array.isArray(data?.data) ? data.data.length : 0;
+    const rawEntries = Array.isArray(data?.data) ? data.data : [];
+    if (rawEntries.length > 0) sawUpstreamEntry = true;
     all.push(...parseChapters(data));
     offset += offsetStep;
     // Stop when the upstream page wasn't full — that's the real end,
     // regardless of how many entries the zero-page/external filter removed.
-    if (rawCount < offsetStep || offset >= maxChapters) break;
+    if (rawEntries.length < offsetStep || offset >= maxChapters) break;
+  }
+
+  // MangaPlus overlay: when MangaDex's English feed exists but yields zero
+  // readable/external chapters (full DMCA strip), pull the official chapter
+  // list from MangaPlus and map it by title. Additive only.
+  if (all.length === 0 && sawUpstreamEntry) {
+    const detail = await getMangaDetail(id).catch(() => null);
+    const overlay = detail
+      ? await searchMangaPlusChapters(detail.title).catch(() => [] as MangaPlusChapter[])
+      : [];
+    if (overlay.length > 0) {
+      return overlay.map((c) => ({
+        id: `mangaplus::${c.titleId}::${c.chapterId}`,
+        chapter: c.chapter,
+        title: c.subtitle || undefined,
+        pages: 0,
+        publishedAt: c.startDate || "",
+        language: "en",
+        externalUrl: `https://mangaplus.shueisha.co.kr/viewer/${c.chapterId}`,
+        externalSource: "mangaplus",
+        externalChapterNumber: c.chapter,
+        scanlationGroup: ["MangaPlus (official)"],
+      }));
+    }
   }
 
   return all;
@@ -534,110 +523,102 @@ export async function searchJikan(query: string): Promise<NormalizedManga[]> {
   }
 }
 
-// ---- Consumet (MangaPill, full English scanlation catalog) ----
+// ---- MangaPlus (Shueisha official API) ----
+// Official, free simulpub service. Used for two things:
+//   1. Chapter-list overlay for heavily DMCA'd licensed titles whose
+//      MangaDex English feed is empty (mapped via title match).
+//   2. Optional direct-API page fetch when a chapter link is opened in-app.
+// The API is the same one the official app uses; no auth required. It is
+// region-restricted in some networks (notably parts of Asia); every call
+// fails soft (returns empty) so MangaDex-only behavior is unaffected.
 
-const CONSUMET_BASE = `${API_BASE}/consumet`;
-
-export interface ConsumetSearchResult {
-  id: string;
-  title: string;
-  image: string;
+export interface MangaPlusChapter {
+  titleId: number;
+  chapterId: number;
+  chapter: string;
+  subtitle?: string;
+  startDate?: string;
 }
 
-export interface ConsumetChapterInfo {
-  id: string;
-  title: string;
-  chapter?: string;
-}
-
-export interface ConsumetMangaInfo {
-  id: string;
-  title: string;
-  description?: string;
-  genres?: string[];
-  image?: string;
-  chapters: ConsumetChapterInfo[];
-}
-
-export async function searchConsumet(query: string): Promise<ConsumetSearchResult[]> {
+// All MangaPlus requests go through the same-origin proxy so the browser
+// never talks cross-origin and responses get server-side caching.
+async function mangaPlusApi(pathAndQuery: string): Promise<any | null> {
   try {
-    const res = await fetch(`${CONSUMET_BASE}/search/${encodeURIComponent(query)}`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data?.value?.results ?? data?.results ?? []) as ConsumetSearchResult[];
-  } catch {
-    return [];
-  }
-}
-
-export async function getConsumetInfo(id: string): Promise<ConsumetMangaInfo | null> {
-  try {
-    const res = await fetch(`${CONSUMET_BASE}/info?id=${encodeURIComponent(id)}`);
+    const res = await fetch(`${API_BASE}/mangaplus/${pathAndQuery}`);
     if (!res.ok) return null;
-    const raw = await res.json();
-    const data = raw?.value ?? raw;
-    if (!data || !data.id) return null;
-    return {
-      id: data.id,
-      title: typeof data.title === 'string' ? data.title : data.title?.english || data.title?.romaji || '',
-      description: typeof data.description === 'string' ? data.description : '',
-      genres: Array.isArray(data.genres) ? data.genres.filter((g: unknown) => typeof g === 'string' && g.trim()) : [],
-      image: typeof data.image === 'string' ? data.image : undefined,
-      chapters: Array.isArray(data.chapters)
-        ? data.chapters.map((c: any) => ({ id: c.id, title: c.title || '', chapter: c.chapter }))
-        : [],
-    };
+    const json = await res.json();
+    return json?.value ?? json ?? null;
   } catch {
     return null;
   }
 }
 
-export async function getConsumetChapterPages(chapterId: string): Promise<string[]> {
-  try {
-    const res = await fetch(`${CONSUMET_BASE}/read?chapterId=${encodeURIComponent(chapterId)}`);
-    if (!res.ok) return [];
-    const raw = await res.json();
-    const pages = raw?.value ?? raw;
-    // Real response is an array of { img, page }. Every URL MangaPill returns
-    // is already a full CDN URL usable directly — don't route through the
-    // same-origin image proxy (the proxy's Referer/UA pattern doesn't match
-    // whatever MangaPill's CDN expects and can 502 on some hosts).
-    if (!Array.isArray(pages)) return [];
-    return pages
-      .map((p: any) => (typeof p === 'string' ? p : p?.img))
-      .filter((u: unknown): u is string => typeof u === 'string' && /^https?:\/\//i.test(u));
-  } catch {
-    return [];
-  }
+// Title list + per-title chapter list. Uses the official endpoints:
+//   /digital/web_services/v1/titles/all/all/v2?format=json
+//   /title_v3?title_id=<id>&format=json
+export async function getMangaPlusAllTitles(): Promise<any[]> {
+  const data = await mangaPlusApi('titles/all/all/v2?format=json');
+  return data?.titles ?? data?.titleViewList ?? [];
 }
 
-export function consumetImageProxy(url: string): string {
-  return `${CONSUMET_BASE}/image?url=${encodeURIComponent(url)}`;
+export async function searchMangaPlusChapters(title: string): Promise<MangaPlusChapter[]> {
+  const wanted = normalizeTitle(title);
+  if (!wanted) return [];
+  const titles = await getMangaPlusAllTitles();
+  const match = titles.find((t: any) => {
+    const name = t.name || t.titleName;
+    const en = t.titleName_en || t.englishName;
+    return (name && normalizeTitle(String(name)) === wanted) || (en && normalizeTitle(String(en)) === wanted);
+  });
+  const titleId = match?.titleId;
+  if (!titleId) return [];
+  const detail = await mangaPlusApi(`title_v3?title_id=${titleId}&format=json`);
+  const chapters = [...(detail?.chapterList ?? []), ...(detail?.latestChapterList ?? [])];
+  return chapters
+    .filter((c: any) => !c.subTitleOnly)
+    .map((c: any) => ({
+      titleId,
+      chapterId: c.chapterId,
+      chapter: String(c.number ?? ''),
+      subtitle: c.subTitle || undefined,
+      startDate: c.startDate || undefined,
+    }));
+}
+
+export async function getMangaPlusChapterPages(chapterId: string): Promise<string[]> {
+  const detail = await mangaPlusApi(`chapter_v3?chapter_id=${chapterId}&format=json`);
+  const pages: any[] = detail?.pages ?? [];
+  return pages
+    .map((p: any) => p?.encryptionKey == null ? p?.imageUrl : `${p.imageUrl}#${p.encryptionKey}`)
+    .filter((u: unknown): u is string => typeof u === 'string' && u.length > 0);
+}
+
+export function isMangaPlusId(id: string): boolean {
+  return typeof id === 'string' && id.startsWith('mangaplus::');
+}
+
+// "mangaplus::<titleId>::<chapterId>"
+export function parseMangaPlusId(id: string): { titleId: string; chapterId: string } | null {
+  if (!isMangaPlusId(id)) return null;
+  const parts = id.split('::');
+  if (parts.length !== 3) return null;
+  return { titleId: parts[1], chapterId: parts[2] };
 }
 
 export async function unifiedSearch(query: string): Promise<NormalizedManga[]> {
-  const [mangaDexResults, consumetResults, anilistResults, jikanResults] = await Promise.allSettled([
+  // MangaDex is the catalog and the only readable host; AniList/Jikan are
+  // metadata-only enrichment, dropped when they don't match a MangaDex title.
+  const [mangaDexResults, anilistResults, jikanResults] = await Promise.allSettled([
     searchManga({ title: query, contentRating: ["safe", "suggestive"], limit: 20 }),
-    searchConsumet(query),
     searchAniList(query),
     searchJikan(query),
   ]);
 
   const md = mangaDexResults.status === "fulfilled" ? mangaDexResults.value.map((m: any) => ({ ...m, source: "mangadex" })) : [];
-  const cm: NormalizedManga[] = consumetResults.status === "fulfilled"
-    ? consumetResults.value.map((c) => ({
-        // Use "consumet::" prefix (router-safe; "/" would split the route)
-        // so Consumet entries flow to the Consumet detail/reader path.
-        id: `consumet::${c.id}`,
-        title: c.title,
-        coverUrl: c.image ? consumetImageProxy(c.image) : undefined,
-        source: "consumet",
-      }))
-    : [];
   const al = anilistResults.status === "fulfilled" ? anilistResults.value : [];
   const jk = jikanResults.status === "fulfilled" ? jikanResults.value : [];
 
-  const deduped = deduplicateResults(md, cm, al, jk);
+  const deduped = deduplicateResults(md, al, jk);
 
   const merged: NormalizedManga[] = [];
   const seen = new Set<string>();
@@ -649,44 +630,27 @@ export async function unifiedSearch(query: string): Promise<NormalizedManga[]> {
     if (seen.has(dedupKey)) return;
     seen.add(dedupKey);
 
+    // Only MangaDex entries are readable here (AniList/Jikan IDs don't map to
+    // a detail page); metadata-only entries are dropped entirely.
+    if (primary.source !== "mangadex") return;
+
     const anilistEntry = group.find((g) => g.source === "anilist");
-    const mangadexEntry = group.find((g) => g.source === "mangadex");
-    const consumetEntry = group.find((g) => g.source === "consumet");
+    const jikanEntry = group.find((g) => g.source === "jikan");
 
-    // Readable here = MangaDex or Consumet IDs. AniList/Jikan IDs don't
-    // resolve to a detail page, but still enrich MangaDex entries below.
-    if (!mangadexEntry && !consumetEntry) return;
-
-    // When both MD and Consumet have a result for the same title, prefer
-    // Consumet if MD's catalog is thin (0 chapters = the series is DMCA'd
-    // out of MD's English feed, e.g. the real One Piece has only 12 hosted
-    // EN chapters while Consumet has 1209). When MD has chapters, keep MD —
-    // those are hosted images, not scraped. When only one source exists,
-    // use it.
-    const mdHasContent = !!(mangadexEntry && Number.isFinite(mangadexEntry.chapters) && mangadexEntry.chapters! >= 100);
-    const useConsumet = !!(mangadexEntry && consumetEntry && !mdHasContent);
-    const useMd = !useConsumet;
-
-    const result: NormalizedManga = {
-      id: useConsumet
-        ? (consumetEntry ? `consumet::${consumetEntry.id}` : primary.id)
-        : (mangadexEntry ? mangadexEntry.id : primary.id),
-      title: mangadexEntry?.title || consumetEntry?.title || anilistEntry?.title || primary.title,
-      coverUrl: useConsumet
-        ? (consumetEntry?.coverUrl || mangadexEntry?.coverUrl || anilistEntry?.coverUrl || primary.coverUrl)
-        : (mangadexEntry?.coverUrl || consumetEntry?.coverUrl || anilistEntry?.coverUrl || primary.coverUrl),
-      description: mangadexEntry?.description || anilistEntry?.description || primary.description,
-      score: mangadexEntry?.score ?? anilistEntry?.score ?? primary.score,
-      genres: mangadexEntry?.genres || anilistEntry?.genres || primary.genres,
-      tags: mangadexEntry?.tags || primary.tags,
-      status: mangadexEntry?.status || anilistEntry?.status || primary.status,
-      year: mangadexEntry?.year || primary.year,
-      chapters: useMd ? (mangadexEntry?.chapters ?? anilistEntry?.chapters) : undefined,
-      volumes: useMd ? (mangadexEntry?.volumes ?? anilistEntry?.volumes) : undefined,
-      source: useConsumet ? "consumet" : "mangadex",
-    };
-
-    merged.push(result);
+    merged.push({
+      id: primary.id,
+      title: primary.title,
+      coverUrl: primary.coverUrl,
+      description: primary.description || anilistEntry?.description || jikanEntry?.description,
+      score: primary.score ?? anilistEntry?.score ?? jikanEntry?.score,
+      genres: primary.genres?.length ? primary.genres : (anilistEntry?.genres || jikanEntry?.genres),
+      tags: primary.tags,
+      status: primary.status || anilistEntry?.status || jikanEntry?.status,
+      year: primary.year || anilistEntry?.year,
+      chapters: primary.chapters ?? anilistEntry?.chapters,
+      volumes: primary.volumes ?? anilistEntry?.volumes,
+      source: "mangadex",
+    });
   });
 
   return merged;

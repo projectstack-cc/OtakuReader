@@ -1,6 +1,6 @@
 import { Component, Show } from "solid-js";
 import { A } from "@solidjs/router";
-import { classNames } from "~/lib/utils/helpers";
+import { classNames, encodeId } from "~/lib/utils/helpers";
 
 interface MangaCardProps {
   id: string;
@@ -12,7 +12,7 @@ interface MangaCardProps {
 }
 
 const MangaCard: Component<MangaCardProps> = (props) => {
-  const href = () => props.href || `/manga/${props.id}`;
+  const href = () => props.href || `/manga/${encodeId(props.id)}`;
 
   return (
     <A href={href()} class="manga-card block group">

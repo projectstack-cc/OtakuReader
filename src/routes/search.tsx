@@ -1,6 +1,7 @@
 import { Component, createSignal, createEffect, For, Show, onMount } from "solid-js";
 import { useNavigate, useSearchParams } from "@solidjs/router";
 import { unifiedSearch, searchAniListDirect } from "~/lib/utils/api";
+import { encodeId } from "~/lib/utils/helpers";
 import MangaCard from "~/lib/components/MangaCard";
 
 const SearchPage: Component = () => {
@@ -91,7 +92,7 @@ const SearchPage: Component = () => {
       <div class="max-w-2xl mx-auto mb-8">
         <h1 class="text-3xl font-bold text-[var(--text-primary)] mb-2 text-center">Search Manga</h1>
         <p class="text-[var(--text-secondary)] text-center mb-6">
-          Search across MangaDex, AniList, and Jikan
+          Powered by MangaDex — metadata enriched by AniList &amp; MyAnimeList
         </p>
 
         <div class="relative">
@@ -162,7 +163,7 @@ const SearchPage: Component = () => {
         <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4">
           <For each={results()}>
             {(manga) => (
-              <div onClick={() => navigate(`/manga/${manga.id}`)} class="cursor-pointer">
+              <div onClick={() => navigate(`/manga/${encodeId(manga.id)}`)} class="cursor-pointer">
                 <MangaCard
                   id={manga.id}
                   title={manga.title}

@@ -25,3 +25,24 @@ export function truncateText(text: string, maxLength: number): string {
 export function generateId(): string {
   return Math.random().toString(36).slice(2, 11) + Date.now().toString(36);
 }
+
+// Encodes an id for use as a single URL path segment. Composite ids (e.g.
+// "mangaplus::<titleId>::<chapterId>") contain reserved characters, and even
+// plain UUIDs are safer encoded — without this a "/" anywhere in an id would
+// split it across multiple path segments and the [id]/[chapterId] routes
+// would never match. Use for EVERY /manga/... and /read/... navigation; the
+// router decodes params back to the raw id automatically.
+export function encodeId(id: string): string {
+  return encodeURIComponent(id);
+}
+
+// Route params can come back still percent-encoded (observed on SSR and in
+// dev for ids like "consumet%3A%3A..."), so normalize them back to their raw
+// form before any logic that inspects the id.
+export function decodeId(id: string): string {
+  try {
+    return decodeURIComponent(id);
+  } catch {
+    return id;
+  }
+}

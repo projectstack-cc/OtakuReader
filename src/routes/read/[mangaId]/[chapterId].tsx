@@ -1,6 +1,7 @@
 import { Component, createSignal, createEffect, Show, onMount, onCleanup, For } from "solid-js";
 import { useParams, useNavigate } from "@solidjs/router";
-import { getChapterPages, getMangaFeed, getMangaDetail, getConsumetChapterPages } from "~/lib/utils/api";
+import { encodeId, decodeId } from "~/lib/utils/helpers";
+import { getChapterPages, getMangaFeed, getMangaDetail, getMangaPlusChapterPages, parseMangaPlusId, searchMangaPlusChapters } from "~/lib/utils/api";
 import Reader from "~/lib/components/Reader";
 import LoadingSpinner from "~/lib/components/LoadingSpinner";
 import ResumePrompt from "~/lib/components/ResumePrompt";
@@ -19,7 +20,11 @@ interface FeedChapter {
 }
 
 const ReadPage: Component = () => {
-  const params = useParams<{ mangaId: string; chapterId: string }>();
+  const rawParams = useParams<{ mangaId: string; chapterId: string }>();
+  // Route params may arrive percent-encoded; decode before use.
+  const params = new Proxy({} as { mangaId: string; chapterId: string }, {
+    get: (_, key: string) => decodeId((rawParams as any)[key] ?? ""),
+  });
   const navigate = useNavigate();
   const [pages, setPages] = createSignal<string[]>([]);
   const [chapterInfo, setChapterInfo] = createSignal<{ id: string; chapter: string; title?: string; pages: number } | null>(null);
@@ -35,6 +40,9 @@ const ReadPage: Component = () => {
   const [showResumePrompt, setShowResumePrompt] = createSignal(false);
   const [resumePage, setResumePage] = createSignal(0);
   const [loadedPageCount, setLoadedPageCount] = createSignal(0);
+  // True when the current pages came from the official MangaPlus API fallback
+  // (used for a UI hint, e.g. "reading via MangaPlus (official)").
+  const [externalReading, setExternalReading] = createSignal(false);
 
   const userLanguage = () => {
     try {
@@ -47,13 +55,14 @@ const ReadPage: Component = () => {
   const fetchChapterData = async () => {
     try {
       setLoading(true);
-      const sourceParam = params.mangaId.includes("::") ? `&source=${encodeURIComponent(params.mangaId.split("::")[0])}` : "";
+      // mangaId is always a MangaDex uuid now; chapterId may be a MangaDex
+      // chapter id OR a "mangaplus::<titleId>::<chapterId>" overlay id.
+      const mpChapter = parseMangaPlusId(params.chapterId);
       const [fetchedPages, mangaDetail] = await Promise.allSettled([
-        params.mangaId.includes("::")
-          ? getConsumetChapterPages(params.chapterId)
+        mpChapter
+          ? getMangaPlusChapterPages(mpChapter.chapterId)
           : getChapterPages(params.mangaId, params.chapterId),
         (async () => {
-          if (params.mangaId.includes("::")) return getMangaDetail(params.mangaId);
           const r = await fetch(`/api/manga/manga/${params.mangaId}?includes[]=cover_art`);
           if (!r.ok) throw new Error("Failed to fetch manga detail");
           return r.json();
@@ -61,8 +70,36 @@ const ReadPage: Component = () => {
       ]);
 
       if (fetchedPages.status === "fulfilled") {
-        setPages(fetchedPages.value);
-        if (fetchedPages.value.length === 0) {
+        let pageList = fetchedPages.value;
+        if (pageList.length === 0 && !mpChapter) {
+          // The MangaDex chapter has no viewable pages: either it's an
+          // external (MangaPlus simulpub) entry or a zombie hosted entry that
+          // upstream deleted. Fall back to the official MangaPlus API: find
+          // this chapter's number from the MD feed, locate the same chapter
+          // on the matched MangaPlus title, and read it in-app.
+          pageList = await (async () => {
+            try {
+              const title = (mangaDetail.status === "fulfilled")
+                ? (mangaDetail.value as any)?.data?.attributes?.title?.en || (mangaDetail.value as any)?.data?.attributes?.title?.["en-US"] || ""
+                : "";
+              if (!title) return [];
+              const feed = await getMangaFeed(params.mangaId).catch(() => []);
+              const entry = feed.find((c: any) => c.id === params.chapterId);
+              const num = entry?.externalChapterNumber || entry?.chapter;
+              if (!num || num === "0") return [];
+              const chapters = await searchMangaPlusChapters(title);
+              const target = chapters.find((c) => c.chapter === num);
+              if (!target) return [];
+              const pages = await getMangaPlusChapterPages(String(target.chapterId));
+              setExternalReading(true);
+              return pages;
+            } catch {
+              return [];
+            }
+          })();
+        }
+        setPages(pageList);
+        if (pageList.length === 0) {
           setError("This chapter has no readable pages (it may be an external/licensed release not hosted on MangaDex).");
         }
       } else {
@@ -166,14 +203,16 @@ const ReadPage: Component = () => {
   };
 
   const handlePrevChapter = () => {
-    if (prevChapterId()) {
-      navigate(`/read/${params.mangaId}/${prevChapterId()}`);
+    const prev = prevChapterId();
+    if (prev) {
+      navigate(`/read/${encodeId(params.mangaId)}/${encodeId(prev)}`);
     }
   };
 
   const handleNextChapter = () => {
-    if (nextChapterId()) {
-      navigate(`/read/${params.mangaId}/${nextChapterId()}`);
+    const next = nextChapterId();
+    if (next) {
+      navigate(`/read/${encodeId(params.mangaId)}/${encodeId(next)}`);
     }
   };
 

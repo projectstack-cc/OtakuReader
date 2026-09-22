@@ -1,9 +1,25 @@
 import { defineConfig } from "vite";
+import { fileURLToPath } from "node:url";
 import { solidStart } from "@solidjs/start/config";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 
+// Dev-only fix: @solidjs/start's dev-toolbar error viewer imports
+// @jridgewell/trace-mapping, whose ESM import of @jridgewell/resolve-uri is
+// resolved by Vite's `browser` export condition to the UMD build (no default
+// export) — a module-eval SyntaxError that kills whichever route chunk loads
+// it (observed: /manga/[id] rendered nothing in dev). Alias it to the real
+// ESM build. Production builds are unaffected either way.
+const jridgewellResolveUri = fileURLToPath(
+  new URL("./node_modules/@jridgewell/resolve-uri/dist/resolve-uri.mjs", import.meta.url),
+);
+
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@jridgewell/resolve-uri": jridgewellResolveUri,
+    },
+  },
   plugins: [
     tailwindcss(),
     solidStart({ ssr: true }),
