@@ -5,7 +5,7 @@ import MangaCard from "~/lib/components/MangaCard";
 import ChapterList from "~/lib/components/ChapterList";
 import { favoritesActions } from "~/lib/stores/favorites";
 import { readerActions } from "~/lib/stores/reader";
-import { classNames, encodeId, decodeId } from "~/lib/utils/helpers";
+import { classNames, encodeId, decodeId, legacyConsumetQuery } from "~/lib/utils/helpers";
 
 const MangaDetailPage: Component = () => {
   const rawParams = useParams<{ id: string }>();
@@ -21,6 +21,15 @@ const MangaDetailPage: Component = () => {
   const [isFavorite, setIsFavorite] = createSignal(false);
 
   createEffect(() => {
+    // Legacy Consumet deep links (e.g. bookmarked /manga/consumet::7529/…)
+    // no longer resolve — redirect them to a title search instead of a
+    // dead error page.
+    const legacyQuery = legacyConsumetQuery(params.id);
+    if (legacyQuery) {
+      navigate(`/search?q=${encodeURIComponent(legacyQuery)}`, { replace: true });
+      return;
+    }
+
     const fetchManga = async () => {
       try {
         setLoading(true);

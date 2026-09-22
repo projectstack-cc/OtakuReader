@@ -36,6 +36,24 @@ export function encodeId(id: string): string {
   return encodeURIComponent(id);
 }
 
+// Returns a search query for a legacy Consumet deep-link id (e.g.
+// "consumet::7529/kagurabachi" or the double-prefixed
+// "consumet::consumet::7529/kagurabachi", possibly percent-encoded), or
+// null for normal ids (MangaDex uuids, "mangaplus::…"). The slug's dashes
+// become spaces so title search matches.
+export function legacyConsumetQuery(id: string): string | null {
+  let decoded = id;
+  try {
+    decoded = decodeURIComponent(id);
+  } catch {
+    /* keep raw */
+  }
+  if (!decoded.startsWith("consumet::")) return null;
+  const slug = decoded.split("/").pop() ?? "";
+  const query = slug.replace(/-/g, " ").trim();
+  return query || null;
+}
+
 // Route params can come back still percent-encoded (observed on SSR and in
 // dev for ids like "consumet%3A%3A..."), so normalize them back to their raw
 // form before any logic that inspects the id.

@@ -1,6 +1,6 @@
 import { Component, createSignal, createEffect, Show, onMount, onCleanup, For } from "solid-js";
 import { useParams, useNavigate } from "@solidjs/router";
-import { encodeId, decodeId } from "~/lib/utils/helpers";
+import { encodeId, decodeId, legacyConsumetQuery } from "~/lib/utils/helpers";
 import { getChapterPages, getMangaFeed, getMangaDetail, getMangaPlusChapterPages, parseMangaPlusId, searchMangaPlusChapters } from "~/lib/utils/api";
 import Reader from "~/lib/components/Reader";
 import LoadingSpinner from "~/lib/components/LoadingSpinner";
@@ -55,6 +55,13 @@ const ReadPage: Component = () => {
   const fetchChapterData = async () => {
     try {
       setLoading(true);
+      // Legacy Consumet reader deep links no longer resolve — send them to
+      // a title search instead of a dead error page.
+      const legacyQuery = legacyConsumetQuery(params.mangaId);
+      if (legacyQuery) {
+        navigate(`/search?q=${encodeURIComponent(legacyQuery)}`, { replace: true });
+        return;
+      }
       // mangaId is always a MangaDex uuid now; chapterId may be a MangaDex
       // chapter id OR a "mangaplus::<titleId>::<chapterId>" overlay id.
       const mpChapter = parseMangaPlusId(params.chapterId);
