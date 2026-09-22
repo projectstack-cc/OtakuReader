@@ -162,24 +162,37 @@ const SearchPage: Component = () => {
         </p>
         <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4">
           <For each={results()}>
-            {(manga) => (
-              <div onClick={() => navigate(`/manga/${encodeId(manga.id)}`)} class="cursor-pointer">
-                <MangaCard
-                  id={manga.id}
-                  title={manga.title}
-                  coverUrl={manga.coverUrl}
-                  description={manga.description}
-                  score={manga.score}
-                />
-                <Show when={manga.source === "anilist"}>
-                  <div class="mt-1 flex items-center gap-1">
-                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-[var(--accent)]/20 text-[var(--accent-light)] font-medium">
-                      AniList
-                    </span>
-                  </div>
-                </Show>
-              </div>
-            )}
+            {(manga) => {
+              // Only MangaDex ids resolve to a detail page here. In the
+              // AniList-fallback path every result is metadata-only, so cards
+              // deep-link to AniList's site instead of a dead internal route.
+              const isReadable = manga.source !== "anilist";
+              return (
+                <div
+                  onClick={() =>
+                    isReadable
+                      ? navigate(`/manga/${encodeId(manga.id)}`)
+                      : window.open(`https://anilist.co/manga/${manga.id}`, "_blank", "noopener")
+                  }
+                  class="cursor-pointer"
+                >
+                  <MangaCard
+                    id={manga.id}
+                    title={manga.title}
+                    coverUrl={manga.coverUrl}
+                    description={manga.description}
+                    score={manga.score}
+                  />
+                  <Show when={manga.source === "anilist"}>
+                    <div class="mt-1 flex items-center gap-1">
+                      <span class="text-[10px] px-1.5 py-0.5 rounded bg-[var(--accent)]/20 text-[var(--accent-light)] font-medium">
+                        AniList ↗
+                      </span>
+                    </div>
+                  </Show>
+                </div>
+              );
+            }}
           </For>
         </div>
       </Show>

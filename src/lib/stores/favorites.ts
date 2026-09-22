@@ -1,4 +1,5 @@
 import { createStore, produce } from "solid-js/store";
+import { isLegacyConsumetId } from "./migrate";
 
 export interface FavoriteManga {
   id: string;
@@ -9,10 +10,13 @@ export interface FavoriteManga {
 
 const STORAGE_KEY = "otakureader_favorites";
 
+// Legacy Consumet entries are filtered at load (belt) and by the one-time
+// migration (suspenders) — see lib/stores/migrate.ts.
 export function loadFavorites(): FavoriteManga[] {
   try {
     const data = localStorage.getItem(STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
+    const parsed = data ? JSON.parse(data) : [];
+    return Array.isArray(parsed) ? parsed.filter((f: FavoriteManga) => !isLegacyConsumetId(f?.id)) : [];
   } catch {
     return [];
   }
