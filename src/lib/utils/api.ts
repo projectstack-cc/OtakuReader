@@ -369,7 +369,24 @@ export async function getMangaFeed(id: string): Promise<NormalizedChapter[]> {
   return all;
 }
 
+// Pages saved in the local library (served from disk by /api/library). Returns null when
+// the chapter isn't saved or the library API doesn't exist (e.g. the static/Vercel build,
+// where an unknown /api path can answer 200 with an HTML shell - hence the JSON checks).
+async function getLocalChapterPages(mangaId: string, chapterId: string): Promise<string[] | null> {
+  try {
+    const res = await fetch(`/api/library/${mangaId}/${chapterId}`);
+    if (!res.ok || !(res.headers.get("content-type") ?? "").includes("json")) return null;
+    const data = await res.json();
+    return Array.isArray(data?.pages) && data.pages.length > 0 ? (data.pages as string[]) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getChapterPages(mangaId: string, chapterId: string): Promise<string[]> {
+  const local = await getLocalChapterPages(mangaId, chapterId);
+  if (local) return local;
+
   // MangaDex serves chapter images via the at-home/server flow, not a
   // manga/chapter/pages endpoint (that path doesn't exist upstream):
   // fetch a baseUrl + hash + filename list, then build image URLs from them.
@@ -553,12 +570,16 @@ async function mangaPlusApi(pathAndQuery: string): Promise<any | null> {
   }
 }
 
-// Title list + per-title chapter list. Uses the official endpoints:
-//   /digital/web_services/v1/titles/all/all/v2?format=json
-//   /title_v3?title_id=<id>&format=json
+// Title list + per-title chapter list + per-chapter page URLs. The proxy
+// returns the raw SuccessResult protobuf decoded to JSON, so the shapes below
+// match the proto schema exactly:
+//   allTitlesViewV2.allTitlesGroup[].titles[]        (titleId, name)
+//   titleDetailView.firstChapterList[]                (chapterId, number, subTitle, startDate, subTitleOnly)
+//   mangaViewer.pages[].mangaPage.imageUrl / .encryptionKey
 export async function getMangaPlusAllTitles(): Promise<any[]> {
-  const data = await mangaPlusApi('titles/all/all/v2?format=json');
-  return data?.titles ?? data?.titleViewList ?? [];
+  const data = await mangaPlusApi('title_list/all_v3');
+  const groups = data?.allTitlesViewV2?.allTitlesGroup ?? [];
+  return groups.flatMap((g: any) => g.titles ?? []);
 }
 
 export async function searchMangaPlusChapters(title: string): Promise<MangaPlusChapter[]> {
@@ -566,30 +587,39 @@ export async function searchMangaPlusChapters(title: string): Promise<MangaPlusC
   if (!wanted) return [];
   const titles = await getMangaPlusAllTitles();
   const match = titles.find((t: any) => {
-    const name = t.name || t.titleName;
-    const en = t.titleName_en || t.englishName;
-    return (name && normalizeTitle(String(name)) === wanted) || (en && normalizeTitle(String(en)) === wanted);
+    const name = t.name; // proto field: Title.name
+    return name && normalizeTitle(String(name)) === wanted;
   });
   const titleId = match?.titleId;
   if (!titleId) return [];
-  const detail = await mangaPlusApi(`title_v3?title_id=${titleId}&format=json`);
-  const chapters = [...(detail?.chapterList ?? []), ...(detail?.latestChapterList ?? [])];
-  return chapters
-    .filter((c: any) => !c.subTitleOnly)
+  // title_detailV3 (proxy drops ?format=json; device_secret is added server-side)
+  const detail = await mangaPlusApi(`title_detailV3?title_id=${titleId}&lang=eng&clang=eng`);
+  const firstChapterList = detail?.titleDetailView?.firstChapterList ?? [];
+  return firstChapterList
+    .filter((c: any) => !c.subTitleOnly) // proto: Chapter.subTitleOnly
     .map((c: any) => ({
-      titleId,
-      chapterId: c.chapterId,
-      chapter: String(c.number ?? ''),
+      titleId: String(titleId),
+      chapterId: String(c.chapterId),
+      chapter: String(c.number ?? ''), // proto: Chapter.number (string)
       subtitle: c.subTitle || undefined,
       startDate: c.startDate || undefined,
     }));
 }
 
 export async function getMangaPlusChapterPages(chapterId: string): Promise<string[]> {
-  const detail = await mangaPlusApi(`chapter_v3?chapter_id=${chapterId}&format=json`);
-  const pages: any[] = detail?.pages ?? [];
+  // manga_viewer is the real endpoint (chapter_v3 doesn't exist on the API).
+  const detail = await mangaPlusApi(
+    `manga_viewer?chapter_id=${chapterId}&split=yes&img_quality=super_high&ticket_reading=no&free_reading=yes&subscription_reading=no&viewer_mode=vertical&clang=eng`,
+  );
+  // mangaViewer.pages[] -> each Page.mangaPage.imageUrl [+ encryptionKey fragment]
+  const pages: any[] = detail?.mangaViewer?.pages ?? [];
   return pages
-    .map((p: any) => p?.encryptionKey == null ? p?.imageUrl : `${p.imageUrl}#${p.encryptionKey}`)
+    .filter((p: any): p is any => p?.mangaPage != null)
+    .map((p: any) => {
+      const imageUrl = p.mangaPage.imageUrl; // string
+      const key = p.mangaPage.encryptionKey; // string | undefined
+      return key && key.length > 0 ? `${imageUrl}#${key}` : imageUrl;
+    })
     .filter((u: unknown): u is string => typeof u === 'string' && u.length > 0);
 }
 

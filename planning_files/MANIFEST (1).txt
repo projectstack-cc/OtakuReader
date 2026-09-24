@@ -1,0 +1,37 @@
+# 17 — Backup & Restore
+
+## Back up
+
+- SQLite database
+- Manga pages/covers
+- Non-secret configuration
+
+Keep secrets in a secure secret store or protected backup location.
+
+## Strategy
+
+At minimum:
+
+- Daily database backup
+- Regular library backup
+- Retention policy
+- Off-VPS copy
+
+Use a SQLite-safe backup mechanism rather than blindly copying a live database during writes.
+
+Use stored checksums to verify library files.
+
+## Restore order
+
+```text
+1. Deploy application version
+2. Restore SQLite
+3. Restore library files
+4. Verify checksums
+5. Run compatible migrations
+6. Start worker
+7. Verify library
+8. Verify reader
+```
+
+A backup is not valid until a restore has been tested.

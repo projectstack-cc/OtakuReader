@@ -1,4 +1,4 @@
-import { Component, Show, For, createSignal, createEffect } from "solid-js";
+import { Component, Show, For, createSignal, createEffect, onMount } from "solid-js";
 import { classNames, formatRelativeTime, truncateText } from "~/lib/utils/helpers";
 
 interface Chapter {
@@ -28,6 +28,55 @@ const ChapterList: Component<ChapterListProps> = (props) => {
   const [showAll, setShowAll] = createSignal(false);
   const [sortOrder, setSortOrder] = createSignal<"asc" | "desc">("asc");
   const [hasDefaultedLang, setHasDefaultedLang] = createSignal(false);
+
+  // Local library ("Save offline"): only shown when the server exposes /api/library
+  // (the self-hosted build). On the static/Vercel build the probe fails and nothing renders.
+  const [libraryReady, setLibraryReady] = createSignal(false);
+  const [saved, setSaved] = createSignal<Set<string>>(new Set());
+  const [saving, setSaving] = createSignal<string | null>(null);
+  const [saveError, setSaveError] = createSignal<string | null>(null);
+
+  onMount(async () => {
+    try {
+      const res = await fetch(`/api/library/${props.mangaId}`);
+      if (!res.ok || !(res.headers.get("content-type") ?? "").includes("json")) return;
+      const rows = await res.json();
+      if (!Array.isArray(rows)) return;
+      setLibraryReady(true);
+      setSaved(new Set(rows.map((c: { chapterId: string }) => c.chapterId)));
+    } catch {
+      // library API unavailable
+    }
+  });
+
+  const saveOffline = async (chapterId: string) => {
+    setSaving(chapterId);
+    setSaveError(null);
+    const send = (token: string | null) =>
+      fetch("/api/library/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ mangaId: props.mangaId, chapterId }),
+      });
+    try {
+      let token: string | null = null;
+      try { token = localStorage.getItem("libraryToken"); } catch { /* storage blocked */ }
+      let res = await send(token);
+      if (res.status === 401) {
+        token = window.prompt("Library token (LIBRARY_TOKEN on your server)");
+        if (!token) throw new Error("Token required to save chapters");
+        res = await send(token);
+        if (res.ok) { try { localStorage.setItem("libraryToken", token); } catch { /* ignore */ } }
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? `Save failed (${res.status})`);
+      setSaved(new Set([...saved(), chapterId]));
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Save failed");
+    } finally {
+      setSaving(null);
+    }
+  };
 
   createEffect(() => {
     if (hasDefaultedLang() || props.chapters.length === 0) return;
@@ -92,6 +141,9 @@ const ChapterList: Component<ChapterListProps> = (props) => {
   // Default to the first release that actually has pages — the first-listed
   // release may be a zero-page/external one, which renders as a broken read.
   const defaultReleaseIndex = (group: ChapterGroup) => {
+    // A release saved in the local library wins: it's the one that still reads offline.
+    const savedIdx = group.releases.findIndex((r) => saved().has(r.id));
+    if (savedIdx >= 0) return savedIdx;
     const withPages = group.releases.findIndex((r) => r.pages > 0);
     return withPages >= 0 ? withPages : 0;
   };
@@ -163,7 +215,7 @@ const ChapterList: Component<ChapterListProps> = (props) => {
           {(group) => {
             const chapter = () => selectedChapter(group);
             return (
-              <div class="rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] hover:border-[var(--accent)] hover:bg-[var(--bg-tertiary)] transition-all duration-200 group overflow-hidden">
+              <div class="relative rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] hover:border-[var(--accent)] hover:bg-[var(--bg-tertiary)] transition-all duration-200 group overflow-hidden">
                 <button
                   onClick={() => {
                     const ch = chapter();
@@ -175,7 +227,7 @@ const ChapterList: Component<ChapterListProps> = (props) => {
                       props.onReadChapter?.(ch.id);
                     }
                   }}
-                  class="w-full text-left p-4"
+                  class={classNames("w-full text-left p-4", libraryReady() && "pr-32")}
                 >
                   <div class="flex items-center justify-between">
                     <div class="flex-1 min-w-0">
@@ -224,6 +276,19 @@ const ChapterList: Component<ChapterListProps> = (props) => {
                     </svg>
                   </div>
                 </button>
+                <Show when={libraryReady() && !chapter().externalUrl && chapter().pages > 0}>
+                  <button
+                    type="button"
+                    disabled={saving() !== null || saved().has(chapter().id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void saveOffline(chapter().id);
+                    }}
+                    class="absolute right-12 top-4 text-xs px-2.5 py-1 rounded-full border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent-light)] disabled:opacity-60 disabled:cursor-default transition-colors"
+                  >
+                    {saved().has(chapter().id) ? "✓ Saved" : saving() === chapter().id ? "Saving…" : "Save offline"}
+                  </button>
+                </Show>
                 <Show when={group.releases.length > 1}>
                   <div class="flex items-center gap-2 px-4 pb-3 flex-wrap">
                     <span class="text-xs text-[var(--text-muted)]">Source:</span>

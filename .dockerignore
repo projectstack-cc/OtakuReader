@@ -1,0 +1,90 @@
+# Dependencies
+node_modules/
+.DS_Store
+
+# Build outputs
+dist/
+build/
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Logs
+logs/
+
+# Temporary files
+temp/
+*.tmp
+*.log
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+
+# Node.js
+.npm
+.node
+npm-debug.log*
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+README.md
+
+# Test files
+test/
+__tests__/
+*.test.*
+*.spec.*
+
+# Coverage
+coverage/
+*.coverage
+
+# Artifacts
+*.zip
+*.tar.gz
+*.tgz
+
+# Kilo metadata
+.kilo/
+
+# Vercel
+.vercel
+
+# Local environment
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Runtime data
+data/otakureader.db
+data/manga
+uploads/
+backups/
+
+# Cache
+.cache
+.node_modules
+
+# System files
+*.pid
+*.lock
+*.swp
+*.swo

@@ -1,0 +1,45 @@
+# Self-hosted OtakuReader: one app container plus a named volume that holds the whole
+# library (SQLite db + downloaded pages). Copy .env.docker.example to .env and edit it.
+#
+#   docker compose up -d --build                      # app on http://<host>:3000
+#   docker compose --profile tls up -d --build        # + Caddy: automatic HTTPS for DOMAIN
+#
+# A phone can only install the PWA and run its service worker over HTTPS (or localhost),
+# so for real phone use put the app behind the `tls` profile, a reverse proxy, or Tailscale.
+
+services:
+  app:
+    build: .
+    image: otakureader:latest
+    container_name: otakureader
+    environment:
+      NODE_ENV: production
+      DATA_DIR: /app/data
+      # Required: "Save offline" downloads are refused in production without a token.
+      LIBRARY_TOKEN: ${LIBRARY_TOKEN:?Set LIBRARY_TOKEN in .env (see .env.docker.example)}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      - otakureader_data:/app/data
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["tls"]
+    depends_on:
+      - app
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env to use the tls profile}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  otakureader_data:
+  caddy_data:
+  caddy_config:

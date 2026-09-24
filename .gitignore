@@ -24,3 +24,8 @@ npm-debug.log*
 
 # Test coverage
 coverage/
+
+# Local library data (SQLite db + downloaded pages)
+data/
+*.db
+backups/

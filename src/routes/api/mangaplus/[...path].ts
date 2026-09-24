@@ -1,20 +1,90 @@
-// MangaPlus (Shueisha official) server proxy — see src/lib/utils/api.ts.
-// Routes (all GET):
-//   /api/mangaplus/titles/all/all/v2?format=json  -> full title list
-//   /api/mangaplus/title_v3?title_id=<id>&...     -> title detail + chapter list
-//   /api/mangaplus/chapter_v3?chapter_id=<id>&... -> chapter pages (page URLs)
-// Everything else is 404. All requests carry a browser-like UA; upstream is
-// region-restricted in some networks, so failures return JSON errors and the
-// client treats them as "no data" (MangaDex-only behavior is unaffected).
+// MangaPlus (Shueisha official) server proxy.
+// Real host: jumpg-api.tokyo-cdn.com/api (protobuf + okhttp UA; the old
+// mangaplus.shueisha.co.kr / JSON path was wrong and 403s).
+// Device registration: PUT /register with device_token=md5(deviceId) and
+//   security_key=md5(device_token + '4Kin9vGg'). The returned secret is
+//   cached in KV with a long TTL (it persists across requests) and reused.
+//
+// Endpoints proxied (all GET):
+//   title_list/all_v3      -> full title catalog (JSON, 30 min cache)
+//   title_detailV3         -> per-title detail + chapter list (10 min)
+//   manga_viewer           -> chapter page URLs (1 hour)
+// Everything else returns 404.
 
 import type { APIEvent } from '@solidjs/start/server';
 import { cachedFetch } from '~/lib/api/cache';
+import protobuf from 'protobufjs';
+import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import crypto from 'node:crypto';
 
-const MANGAPLUS_BASE = 'https://mangaplus.shueisha.co.kr';
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+// ---- host / UA (matches the official app's okhttp fingerprint) ----
+const HOST = 'https://jumpg-api.tokyo-cdn.com/api';
+const UA = 'okhttp/4.12.0';
+const COMMON = 'os=android&os_ver=35&app_ver=237';
 
-const ALLOWED = /^(titles\/all\/all\/v2|title_v3|chapter_v3)$/;
+// ---- protobuf: load the schema once at module init ----
+const PROTO_PATH = fileURLToPath(new URL('../scripts/mangaplus_api.proto', import.meta.url));
+const protoRoot = protobuf.parse(readFileSync(PROTO_PATH, 'utf8'), { keepCase: false }).root;
+// Alias to avoid shadowing the global `Response` constructor used in json()/err().
+const MpResponse = protoRoot.lookupType('Response');
 
+// ---- device registration (cached) ----
+const DEVICE_ID = 'otakureader-web-' + (process.env.VERCEL_URL ?? 'dev');
+const DEVICE_TOKEN = crypto.createHash('md5').update(DEVICE_ID).digest('hex');
+const SECURITY_KEY = crypto.createHash('md5').update(DEVICE_TOKEN + '4Kin9vGg').digest('hex');
+
+async function getDeviceSecret(): Promise<string | null> {
+  const { value } = await cachedFetch<{ secret?: string }>(
+    'mangaplus:device_secret',
+    86400, // 24 h
+    async () => {
+      const url = `${HOST}/register?${COMMON}&device_token=${encodeURIComponent(DEVICE_TOKEN)}&security_key=${encodeURIComponent(SECURITY_KEY)}`;
+      const res = await fetch(url, {
+        method: 'PUT',
+        headers: { 'User-Agent': UA, 'Accept-Encoding': 'identity', Connection: 'Keep-Alive' },
+      });
+      if (!res.ok) throw new Error(`register HTTP ${res.status}`);
+      const buf = new Uint8Array(await res.arrayBuffer());
+      const decoded = MpResponse.toObject(MpResponse.decode(buf), { enums: String, defaults: false });
+      const secret = decoded.success?.registerationData?.deviceSecret;
+      if (!secret) throw new Error('register response had no deviceSecret');
+      return { secret };
+    },
+    { probeCache: true },
+  );
+  return value?.secret ?? null;
+}
+
+// ---- protobuf helpers ----
+function decodeResponse(buf: Uint8Array): { error?: string; data?: Record<string, unknown> } {
+  const decoded = MpResponse.toObject(MpResponse.decode(buf), { enums: String, defaults: false });
+  if (decoded.error) return { error: decoded.error.englishPopup ?? decoded.error.message ?? 'unknown' };
+  return { data: decoded.success ?? {} };
+}
+
+// ---- endpoint routing: map path -> real endpoint + query params ----
+function resolveEndpoint(path: string): { realPath: string; extraParams?: string; ttl: number } | null {
+  if (path === 'title_list/all_v3') {
+    return { realPath: 'title_list/all_v3', extraParams: 'type=serializing&lang=eng&clang=eng', ttl: 1800 };
+  }
+  if (path === 'title_detailV3') {
+    return { realPath: 'title_detailV3', ttl: 600 };
+  }
+  if (path === 'manga_viewer') {
+    return { realPath: 'manga_viewer', ttl: 3600 };
+  }
+  return null;
+}
+
+function buildUrl(realPath: string, extraParams: string | undefined, queryString: string): string {
+  const base = `${HOST}/${realPath}?${COMMON}`;
+  const extras = extraParams ? `${extraParams}&` : '';
+  const q = queryString.startsWith('?') ? queryString.slice(1) : queryString;
+  return q ? `${base}${extras}${q}` : `${base}${extras}`.replace(/&$/, '');
+}
+
+// ---- response helpers ----
 function json(data: unknown, ttl: number, fromCache = false): Response {
   return new Response(JSON.stringify(data), {
     status: 200,
@@ -33,26 +103,40 @@ function err(status: number, message: string): Response {
   });
 }
 
+// ---- GET handler ----
 export async function GET(event: APIEvent): Promise<Response> {
   const params = event.params as unknown as Record<string, string | string[]>;
   const raw = params['path'];
   const path = (Array.isArray(raw) ? raw.join('/') : raw || '').replace(/^\//, '');
 
-  if (!ALLOWED.test(path)) return err(404, 'unknown mangaplus endpoint');
+  const endpoint = resolveEndpoint(path);
+  if (!endpoint) return err(404, 'unknown mangaplus endpoint');
 
   const url = new URL(event.request.url);
-  const query = url.search || '?format=json';
+  const query = url.search || '';
 
   try {
-    // Title list: 30 min. Title detail: 10 min. Chapter pages: 1 h.
-    const ttl = path === 'titles/all/all/v2' ? 1800 : path === 'title_v3' ? 600 : 3600;
-    const { value, fromCache } = await cachedFetch(`mangaplus:${path}${query}`, ttl, async () => {
-      const res = await fetch(`${MANGAPLUS_BASE}/${path}${query}`, {
-        headers: { 'User-Agent': UA, Accept: '*/*' },
+    const secret = await getDeviceSecret();
+    if (!secret) return err(502, 'mangaplus: could not obtain device secret');
+
+    const fullUrl = `${buildUrl(endpoint.realPath, endpoint.extraParams, query)}&device_secret=${encodeURIComponent(secret)}`;
+    const ttl = endpoint.ttl;
+    const cacheKey = `mangaplus:${path}${query}`;
+
+    const { value, fromCache } = await cachedFetch<Record<string, unknown>>(cacheKey, ttl, async () => {
+      const res = await fetch(fullUrl, {
+        headers: { 'User-Agent': UA, 'Accept-Encoding': 'identity', Connection: 'Keep-Alive' },
       });
-      if (!res.ok) throw new Error(`MangaPlus returned HTTP ${res.status}`);
-      return res.json();
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`mangaplus upstream HTTP ${res.status}${text ? ': ' + text.slice(0, 200) : ''}`);
+      }
+      const buf = new Uint8Array(await res.arrayBuffer());
+      const decoded = decodeResponse(buf);
+      if (decoded.error) throw new Error(`mangaplus: ${decoded.error}`);
+      return { value: decoded.data ?? {} };
     });
+
     return json(value, ttl, fromCache);
   } catch (e) {
     console.error('[mangaplus-proxy] error', { path, error: e instanceof Error ? e.message : 'unknown' });

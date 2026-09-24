@@ -1,0 +1,6 @@
+# Used by the `tls` compose profile. Caddy obtains and renews the certificate for
+# $DOMAIN automatically (DNS for it must point at this server; ports 80/443 open).
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy app:3000
+}
