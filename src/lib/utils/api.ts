@@ -384,8 +384,12 @@ async function getLocalChapterPages(mangaId: string, chapterId: string): Promise
 }
 
 export async function getChapterPages(mangaId: string, chapterId: string): Promise<string[]> {
-  const local = await getLocalChapterPages(mangaId, chapterId);
-  if (local) return local;
+  // Build-time switch: only the self-hosted (Docker) build sets VITE_LIBRARY=1. The
+  // Vercel build leaves it unset, so it never makes the extra /api/library request.
+  if (import.meta.env.VITE_LIBRARY === "1") {
+    const local = await getLocalChapterPages(mangaId, chapterId);
+    if (local) return local;
+  }
 
   // MangaDex serves chapter images via the at-home/server flow, not a
   // manga/chapter/pages endpoint (that path doesn't exist upstream):

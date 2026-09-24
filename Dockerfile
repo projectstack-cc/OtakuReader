@@ -11,6 +11,8 @@ COPY package.json package-lock.json .npmrc ./
 RUN npm ci
 
 COPY . .
+# Turns on the local-library UI and local-first page loading (off in the Vercel build).
+ENV VITE_LIBRARY=1
 RUN npm run build
 RUN npm prune --omit=dev
 

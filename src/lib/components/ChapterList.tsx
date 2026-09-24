@@ -37,6 +37,8 @@ const ChapterList: Component<ChapterListProps> = (props) => {
   const [saveError, setSaveError] = createSignal<string | null>(null);
 
   onMount(async () => {
+    // Self-hosted build only (VITE_LIBRARY=1); the Vercel build skips the probe entirely.
+    if (import.meta.env.VITE_LIBRARY !== "1") return;
     try {
       const res = await fetch(`/api/library/${props.mangaId}`);
       if (!res.ok || !(res.headers.get("content-type") ?? "").includes("json")) return;
