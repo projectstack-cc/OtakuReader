@@ -1,6 +1,7 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { databaseService } from "~/services/database";
 import { filesystemStorage } from "~/services/filesystem-storage";
+import { getJob } from "~/lib/server/library-jobs";
 
 // Serves the locally stored library. No upstream calls: everything comes from disk.
 //   GET /api/library                              -> stored manga
@@ -34,6 +35,12 @@ export async function GET(event: APIEvent) {
   try {
     if (parts.length === 0) {
       return json(await databaseService.getAllMangas());
+    }
+
+    // GET /api/library/jobs/{mangaId} -> progress of a whole-manga download
+    if (parts[0] === "jobs") {
+      if (parts.length !== 2 || !ID.test(parts[1])) return json({ error: "Bad request" }, 400);
+      return json(getJob(parts[1]) ?? { state: "idle" });
     }
 
     const [mangaId, chapterId, page] = parts;

@@ -92,9 +92,8 @@ class DatabaseService {
   public async initialize(): Promise<void> {
     if (this.db) return;
 
-    // Ensure data directory exists
-    const dataDir = path.join(__dirname, "../data");
-    await this.ensureDirectory(dataDir);
+    // Ensure the directory that holds the database file exists (DATA_DIR / DB_PATH)
+    await this.ensureDirectory(path.dirname(this.dbPath));
 
     this.db = await open({
       filename: this.dbPath,

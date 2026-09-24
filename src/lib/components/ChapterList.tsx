@@ -1,4 +1,4 @@
-import { Component, Show, For, createSignal, createEffect, onMount } from "solid-js";
+import { Component, Show, For, createSignal, createEffect, onMount, onCleanup } from "solid-js";
 import { classNames, formatRelativeTime, truncateText } from "~/lib/utils/helpers";
 
 interface Chapter {
@@ -46,37 +46,96 @@ const ChapterList: Component<ChapterListProps> = (props) => {
       if (!Array.isArray(rows)) return;
       setLibraryReady(true);
       setSaved(new Set(rows.map((c: { chapterId: string }) => c.chapterId)));
+      void pollJob(); // resume the progress display if a save-all is already running
     } catch {
       // library API unavailable
     }
   });
 
-  const saveOffline = async (chapterId: string) => {
-    setSaving(chapterId);
-    setSaveError(null);
+  // POST to the download API with the saved library token; asks for it once on a 401.
+  const postDownload = async (body: Record<string, unknown>) => {
     const send = (token: string | null) =>
       fetch("/api/library/download", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ mangaId: props.mangaId, chapterId }),
+        body: JSON.stringify({ mangaId: props.mangaId, ...body }),
       });
+    let token: string | null = null;
+    try { token = localStorage.getItem("libraryToken"); } catch { /* storage blocked */ }
+    let res = await send(token);
+    if (res.status === 401) {
+      token = window.prompt("Library token (LIBRARY_TOKEN on your server)");
+      if (!token) throw new Error("Token required to save chapters");
+      res = await send(token);
+      if (res.ok) { try { localStorage.setItem("libraryToken", token); } catch { /* ignore */ } }
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error ?? `Save failed (${res.status})`);
+    return data;
+  };
+
+  const saveOffline = async (chapterId: string) => {
+    setSaving(chapterId);
+    setSaveError(null);
     try {
-      let token: string | null = null;
-      try { token = localStorage.getItem("libraryToken"); } catch { /* storage blocked */ }
-      let res = await send(token);
-      if (res.status === 401) {
-        token = window.prompt("Library token (LIBRARY_TOKEN on your server)");
-        if (!token) throw new Error("Token required to save chapters");
-        res = await send(token);
-        if (res.ok) { try { localStorage.setItem("libraryToken", token); } catch { /* ignore */ } }
-      }
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error ?? `Save failed (${res.status})`);
+      await postDownload({ chapterId });
       setSaved(new Set([...saved(), chapterId]));
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "Save failed");
     } finally {
       setSaving(null);
+    }
+  };
+
+  // Whole-manga save: the server downloads every English chapter in the background and
+  // we poll its progress. Safe to leave the page and come back - polling resumes on mount.
+  type LibraryJob = {
+    state: "idle" | "running" | "done" | "cancelled" | "error";
+    total?: number;
+    done?: number;
+    failed?: string[];
+    current?: string;
+    error?: string;
+  };
+  const [job, setJob] = createSignal<LibraryJob>({ state: "idle" });
+  let pollTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(pollTimer));
+
+  const refreshSaved = async () => {
+    try {
+      const rows = await (await fetch(`/api/library/${props.mangaId}`)).json();
+      if (Array.isArray(rows)) setSaved(new Set(rows.map((c: { chapterId: string }) => c.chapterId)));
+    } catch { /* keep what we have */ }
+  };
+
+  const pollJob = async () => {
+    clearTimeout(pollTimer);
+    try {
+      const data: LibraryJob = await (await fetch(`/api/library/jobs/${props.mangaId}`)).json();
+      setJob(data);
+      void refreshSaved();
+      if (data.state === "running") pollTimer = setTimeout(pollJob, 2000);
+    } catch {
+      pollTimer = setTimeout(pollJob, 5000);
+    }
+  };
+
+  const saveAll = async () => {
+    setSaveError(null);
+    try {
+      const data = await postDownload({});
+      setJob(data.job);
+      pollTimer = setTimeout(pollJob, 1500);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Save failed");
+    }
+  };
+
+  const cancelSaveAll = async () => {
+    try {
+      await postDownload({ cancel: true });
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Cancel failed");
     }
   };
 
@@ -211,6 +270,61 @@ const ChapterList: Component<ChapterListProps> = (props) => {
           {sortOrder() === "asc" ? "Oldest first" : "Newest first"}
         </button>
       </div>
+
+      <Show when={libraryReady()}>
+        <div class="rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] px-4 py-3 space-y-1">
+          <div class="flex items-center justify-between gap-3">
+            <p class="min-w-0 text-sm text-[var(--text-secondary)]" data-testid="save-all-status">
+              <Show
+                when={job().state === "running"}
+                fallback={
+                  job().state === "done" && !job().failed?.length
+                    ? "✓ All chapters saved offline"
+                    : `${saved().size} saved offline`
+                }
+              >
+                {job().total
+                  ? `Saving… ${job().done ?? 0}/${job().total}${job().current ? ` · Ch. ${job().current}` : ""}`
+                  : "Saving… getting chapter list"}
+              </Show>
+            </p>
+            <Show
+              when={job().state === "running"}
+              fallback={
+                <button
+                  type="button"
+                  onClick={() => void saveAll()}
+                  class="flex-shrink-0 text-xs px-3 py-1.5 rounded-full border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent-light)] transition-colors"
+                >
+                  Save all offline
+                </button>
+              }
+            >
+              <button
+                type="button"
+                onClick={() => void cancelSaveAll()}
+                class="flex-shrink-0 text-xs px-3 py-1.5 rounded-full border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--warning)] transition-colors"
+              >
+                Cancel
+              </button>
+            </Show>
+          </div>
+          <Show when={job().state === "error"}>
+            <p class="text-xs text-[var(--warning)]">{job().error}</p>
+          </Show>
+          <Show when={job().state === "cancelled"}>
+            <p class="text-xs text-[var(--text-muted)]">Cancelled. Run it again to continue where it stopped.</p>
+          </Show>
+          <Show when={(job().failed?.length ?? 0) > 0}>
+            <p class="text-xs text-[var(--warning)]">
+              Couldn't save: Ch. {job().failed?.join(", ")}. Run it again to retry.
+            </p>
+          </Show>
+          <Show when={saveError()}>
+            <p class="text-xs text-[var(--warning)]">{saveError()}</p>
+          </Show>
+        </div>
+      </Show>
 
       <div class="space-y-2">
         <For each={visibleGroups()}>
